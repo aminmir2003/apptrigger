@@ -1,15 +1,25 @@
-// Configuration kept in GitHub, not in the code: the keys to search for in logs, and the display
-// labels for them. (The key -> team rows stay in CMDBID.xlsx, see cmdb.js.)
+// Configuration kept outside the code: the keys to search for in logs, and the display labels for
+// them. (The key -> team rows stay in CMDBID.xlsx, see cmdb.js.)
 //
-// The file is JSON, fetched from a GitHub repository and cached for a few minutes, so editing it
-// on GitHub updates the app without a redeploy. See config.example.json for the format.
+// Where it comes from:
+//   - GITHUB_REPO set    -> a JSON file in that GitHub repository, cached for a few minutes, so editing it
+//                           on GitHub updates the app without a redeploy.
+//   - GITHUB_REPO empty  -> a local JSON file (for running on your own machine): CONFIG_FILE if set, else
+//                           backend/config.local.json, else backend/config.example.json. Re-read on every call,
+//                           so edits apply straight away.
+// Both use the same format, see config.example.json.
 //
-//   GITHUB_REPO                 owner/repository                      (required)
+//   GITHUB_REPO                 owner/repository                      (empty = use the local file)
+//   CONFIG_FILE                 path of the local file                (local mode only)
 //   GITHUB_CONFIG_PATH          path of the file in the repo          (default apptrigger-config.json)
 //   GITHUB_BRANCH               branch, tag or commit                 (default main)
 //   GITHUB_TOKEN                token with read access to the repo    (needed for a private repo)
 //   GITHUB_API_URL              API base URL                          (default https://api.github.com)
 //   GITHUB_CONFIG_TTL_SECONDS   how long a download is reused         (default 300)
+
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const KEY_PATTERN = /^[A-Za-z0-9_.-]{1,40}$/;
 const MAX_KEYS = 20;
@@ -21,7 +31,7 @@ let inflight = null;
 function settings() {
   const repo = (process.env.GITHUB_REPO || '').trim();
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-    throw new Error('GITHUB_REPO is not set. Put the repository as owner/name in backend/.env (for example GITHUB_REPO=my-org/apptrigger-config).');
+    throw new Error(`GITHUB_REPO must look like owner/repository (got "${repo.slice(0, 60)}")`);
   }
   return {
     repo,
@@ -84,8 +94,37 @@ async function download() {
   return parseConfig(json);
 }
 
+// ----- local file mode -----------------------------------------------------------------------------
+
+const useGithub = () => (process.env.GITHUB_REPO || '').trim() !== '';
+const here = (name) => fileURLToPath(new URL(`../${name}`, import.meta.url));
+const localCandidates = () => [(process.env.CONFIG_FILE || '').trim() || null, here('config.local.json'), here('config.example.json')].filter(Boolean);
+let localFile = null; // the file the last local read used
+
+async function loadLocal() {
+  for (const file of localCandidates()) {
+    let body;
+    try {
+      body = await fs.readFile(file, 'utf8');
+    } catch (err) {
+      if (err.code === 'ENOENT') continue; // not there: try the next candidate
+      throw new Error(`Could not read the local config file ${file}: ${err.message}`);
+    }
+    let json;
+    try {
+      json = JSON.parse(body);
+    } catch {
+      throw new Error(`The local config file ${path.basename(file)} is not valid JSON`);
+    }
+    localFile = file;
+    return parseConfig(json);
+  }
+  throw new Error('No local config file found. Create backend/config.local.json (copy config.example.json) or set GITHUB_REPO.');
+}
+
 /** The current config, from cache when it is fresh. A failed refresh keeps serving the last good copy. */
 export async function getConfig() {
+  if (!useGithub()) return loadLocal();
   const now = Date.now();
   if (cache && now - cache.fetchedAt < ttlMs() && !cache.stale) return cache.config;
   if (cache && cache.stale && now - cache.fetchedAt < RETRY_AFTER_FAILURE_MS) return cache.config;
@@ -109,9 +148,10 @@ export async function getConfig() {
 
 /** Non-secret facts about where the config came from (for the page's details card). */
 export function configSource() {
+  if (!useGithub()) return { type: 'local', file: localFile ? path.basename(localFile) : null };
   try {
     const s = settings();
-    return { repo: s.repo, path: s.path, branch: s.branch, fetchedAt: cache ? new Date(cache.fetchedAt).toISOString() : null, stale: cache?.stale ?? false };
+    return { type: 'github', repo: s.repo, path: s.path, branch: s.branch, fetchedAt: cache ? new Date(cache.fetchedAt).toISOString() : null, stale: cache?.stale ?? false };
   } catch {
     return null;
   }

@@ -81,7 +81,7 @@ export default function App() {
   const [logs, setLogs] = useState(null);
   const [values, setValues] = useState(null); // matched { key, value } per log, from FuelIX
   const [teams, setTeams] = useState(null); // team (CMDBID.xlsx Description) per log
-  const [config, setConfig] = useState({ searchKeys: [], labels: {}, source: null, error: '', loaded: false }); // from GitHub, via the server
+  const [config, setConfig] = useState({ searchKeys: [], labels: {}, source: null, error: '', loaded: false }); // from the server (GitHub or a local file)
   const [searchKey, setSearchKey] = useState(() => loadSetting('searchKey', null, ALL_KEYS));
   const [user, setUser] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -418,8 +418,8 @@ export default function App() {
                     <InfoRow label="FuelIX model">{info?.fuelixModel ?? 'Not set'}</InfoRow>
                     <InfoRow label="Sign-in (SSO)">{info == null ? 'Unknown' : info.sso ? 'On' : 'Off (local use)'}</InfoRow>
                     <InfoRow label="Paste a log">{pasteEnabled ? 'On' : 'Off'}</InfoRow>
-                    <InfoRow label="Config (GitHub)">
-                      {config.source ? `${config.source.repo}@${config.source.branch}` : 'Not set up'}
+                    <InfoRow label="Config source">
+                      {config.source ? (config.source.type === 'local' ? `Local file ${config.source.file ?? ''}`.trim() : `${config.source.repo}@${config.source.branch}`) : 'Not set up'}
                       {config.error ? ' (error)' : ''}
                     </InfoRow>
                   </dl>
@@ -561,7 +561,7 @@ export default function App() {
         )}
       </form>
 
-      {config.error && <p className="error">Could not load the configuration from GitHub: {config.error}</p>}
+      {config.error && <p className="error">Could not load the configuration: {config.error}</p>}
       {error && <p className="error">{error}</p>}
       {logs && logs.length === 0 && <p className="no-results">No Search Result Found</p>}
       {logs && logs.length > 0 && (

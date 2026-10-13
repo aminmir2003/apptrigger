@@ -8,3 +8,6 @@ keen-tokenizer-*.json
 # Saved TELUS portal login and browser profile (live session cookies)
 .session/
 data/
+
+# Your own local config (see config.example.json); not shared
+config.local.json
