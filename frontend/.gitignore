@@ -1,0 +1,11 @@
+node_modules/
+
+# Build output
+dist/
+
+.env
+.env.*
+!.env.example
+
+# Sample request log with a bearer token and customer details: never commit
+request.txt

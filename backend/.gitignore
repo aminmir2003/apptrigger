@@ -1,0 +1,10 @@
+node_modules/
+
+# Secrets and credentials: never commit these
+.env
+secrets/
+keen-tokenizer-*.json
+
+# Saved TELUS portal login and browser profile (live session cookies)
+.session/
+data/

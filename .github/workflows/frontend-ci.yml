@@ -1,0 +1,71 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [main]
+    paths: ['frontend/**', '.github/workflows/frontend-ci.yml']
+  pull_request:
+    branches: [main]
+    paths: ['frontend/**', '.github/workflows/frontend-ci.yml']
+  workflow_dispatch:
+
+# The workflow only reads the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run that is still going.
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Install, check and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      # Looks at the whole repository, not just frontend/.
+      - name: Make sure no secrets are committed
+        working-directory: .
+        run: |
+          if git ls-files | grep -E '(^|/)(\.env|Fuelix\.txt|request\.txt|payload\.txt)$|keen-tokenizer-.*\.json$|(^|/)\.session/|(^|/)data/browser-profile'; then
+            echo "::error::A secrets file, sample log or saved login is tracked by git. Remove it from the repository and rotate any secret in it."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the log formatter
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      # The built site, so it can be downloaded from the run and inspected or deployed.
+      - name: Upload the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+          if-no-files-found: error
+
+      # Reported as a warning, so a new advisory in a dependency does not block every change.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true

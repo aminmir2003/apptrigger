@@ -1,0 +1,15 @@
+{
+  "searchKeys": [
+    "CMDBID",
+    "X-Kong-Request-Id",
+    "XID",
+    "TID",
+    "relfrozenxid",
+    "X-Consumer-Username"
+  ],
+  "labels": {
+    "X-Consumer-Username": "Consumer",
+    "X-Kong-Request-Id": "Request ID",
+    "CMDBID": "CMDB ID"
+  }
+}

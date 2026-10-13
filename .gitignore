@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------------------
+# apptrigger (top-level repo)
+# ---------------------------------------------------------------------------
+
+# One repository holds both services: backend/ (API) and frontend/ (web page).
+# Each folder also has its own .gitignore with rules specific to it.
+
+# --- Internal data kept out of the repository -------------------------------
+# The sheet of consumer -> team rows. Remove this line (and run `git add backend/CMDBID.xlsx`)
+# only if you are happy for it to be stored here.
+backend/CMDBID.xlsx
+
+# --- Secrets and credentials: never commit ---------------------------------
+.env
+.env.*
+!.env.example
+secrets/
+keen-tokenizer-*.json
+*.pem
+*.key
+Fuelix.txt
+
+# Saved TELUS portal login and browser profile (live session cookies)
+.session/
+data/
+
+# Sample request logs (contain bearer tokens and customer details)
+request.txt
+payload.txt
+
+# --- Dependencies and build output ------------------------------------------
+node_modules/
+dist/
+build/
+coverage/
+
+# --- Logs and temp files ---------------------------------------------------
+*.log
+npm-debug.log*
+*.tmp
+_*.mjs
+_*.ps1
+
+# --- Editor and OS files ---------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

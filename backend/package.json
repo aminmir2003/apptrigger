@@ -1,0 +1,24 @@
+{
+  "name": "apptrigger-log-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --use-env-proxy --env-file=.env src/server.js",
+    "build:frontend": "npm --prefix ../frontend run build",
+    "check": "node scripts/check.mjs",
+    "test:logs": "node --env-file=.env src/testQuery.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google-cloud/logging": "^12.2.0",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "openid-client": "^6.8.8",
+    "puppeteer-core": "^25.13.0",
+    "read-excel-file": "^9.3.12"
+  }
+}
