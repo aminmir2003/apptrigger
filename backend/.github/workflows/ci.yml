@@ -1,0 +1,51 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# The workflow only reads the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run that is still going.
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Install and check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Make sure no secrets are committed
+        run: |
+          if git ls-files | grep -E '(^|/)(\.env|Fuelix\.txt|request\.txt)$|keen-tokenizer-.*\.json$'; then
+            echo "::error::A secrets file is tracked by git. Remove it from the repository and rotate the secret."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the code
+        run: npm run check
+
+      # Reported as a warning, so a new advisory in a dependency does not block every change.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true

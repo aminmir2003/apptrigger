@@ -1,0 +1,63 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# The workflow only reads the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run that is still going.
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Install, check and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Make sure no secrets or sample logs are committed
+        run: |
+          if git ls-files | grep -E '(^|/)(\.env|request\.txt|payload\.txt)$'; then
+            echo "::error::A secrets file or sample log is tracked by git. Remove it from the repository."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the log formatter
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      # The built site, so it can be downloaded from the run and inspected or deployed.
+      - name: Upload the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+          retention-days: 7
+          if-no-files-found: error
+
+      # Reported as a warning, so a new advisory in a dependency does not block every change.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
