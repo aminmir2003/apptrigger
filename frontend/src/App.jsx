@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import LogView from './LogView.jsx';
+import { API_URL, apiFetch } from './api.js';
 
 // Format a Date for <input type="datetime-local"> (local time).
 const toLocalInput = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -122,7 +123,7 @@ export default function App() {
       if (range[0]) params.set('from', range[0].toISOString());
       if (range[1]) params.set('to', range[1].toISOString());
       const t0 = performance.now();
-      const res = await fetch(`/logs?${params}`);
+      const res = await apiFetch(`/logs?${params}`);
       const text = await res.text();
       let body;
       try {
@@ -171,7 +172,7 @@ export default function App() {
   }, [settingsOpen]);
 
   useEffect(() => {
-    fetch('/config')
+    apiFetch('/config')
       .then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => ({})) }))
       .then(({ ok, body }) => {
         if (ok) setConfig({ searchKeys: body.searchKeys, labels: body.labels ?? {}, source: body.source ?? null, error: '', loaded: true });
@@ -185,14 +186,14 @@ export default function App() {
   }, [config, searchKey]);
 
   useEffect(() => {
-    fetch('/info')
+    apiFetch('/info')
       .then((r) => (r.ok ? r.json() : null))
       .then((i) => i && setInfo(i))
       .catch(() => {});
   }, []);
 
   useEffect(() => {
-    fetch('/auth/me')
+    apiFetch('/auth/me')
       .then((r) => (r.ok ? r.json() : null))
       .then((u) => u && setUser(u))
       .catch(() => {});
@@ -212,7 +213,7 @@ export default function App() {
     setError('');
     const t1 = performance.now();
     try {
-      const res = await fetch('/analyze', {
+      const res = await apiFetch('/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -456,7 +457,7 @@ export default function App() {
           </span>
           {user && (
             <span className="user">
-              {user.name} &middot; <a href="/auth/logout">Sign out</a>
+              {user.name} &middot; <a href={`${API_URL}/auth/logout`}>Sign out</a>
             </span>
           )}
         </div>

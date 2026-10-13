@@ -1,7 +1,6 @@
 import express from 'express';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { setupAuth } from './auth.js';
+import { setupCors } from './cors.js';
 import { login as portalLogin, status as portalStatus, logout as portalLogout } from './portalSession.js';
 import { queryLogs } from './logging.js';
 import { extractIds } from './fuelix.js';
@@ -10,6 +9,9 @@ import { getConfig, configSource, chooseKeys } from './githubConfig.js';
 
 const app = express();
 app.use(express.json({ limit: '25mb' }));
+
+// The frontend is a separate service: let its address call this API (before the sign-in gate, so preflights pass).
+setupCors(app);
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
@@ -104,12 +106,7 @@ app.post('/portal/logout', async (_req, res) => {
   res.json({ signedIn: false });
 });
 
-// Serve the built UI (frontend/dist) from the same origin, behind the SSO gate.
-const dist = fileURLToPath(new URL('../../frontend/dist', import.meta.url));
-app.use(express.static(dist));
-app.use((req, res, next) => (req.method === 'GET' ? res.sendFile(path.join(dist, 'index.html')) : next()));
-
 const port = process.env.PORT || 3000;
 // With SSO off, only accept connections from this machine.
 const host = process.env.AUTH_DISABLED === 'true' ? '127.0.0.1' : undefined;
-app.listen(port, host, () => console.log(`Log service listening on ${host ?? ''}:${port}`));
+app.listen(port, host, () => console.log(`apptrigger API listening on ${host ?? ''}:${port}`));

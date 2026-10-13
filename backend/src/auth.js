@@ -3,11 +3,25 @@
 
 import session from 'express-session';
 import * as client from 'openid-client';
+import { frontendBase, frontendOrigins } from './cors.js';
 
 const REQUIRED = ['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_REDIRECT_URI', 'SESSION_SECRET'];
 
-// Only allow redirects back to a path on this site.
-const safeReturnTo = (p) => (typeof p === 'string' && p.startsWith('/') && !p.startsWith('//') && !p.startsWith('/auth/') ? p : '/');
+// Where to send the person after sign-in. Only the frontend may be the target: a path on it, or a full
+// address whose origin is one of FRONTEND_ORIGIN. Anything else goes to the frontend's home page.
+export function safeReturnTo(value) {
+  const base = frontendBase();
+  const home = base || '/';
+  if (typeof value !== 'string') return home;
+  if (value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/auth/')) return base + value;
+  try {
+    const url = new URL(value);
+    if (frontendOrigins().includes(url.origin)) return url.href;
+  } catch {
+    // not a URL: fall through
+  }
+  return home;
+}
 
 export async function setupAuth(app) {
   if (process.env.AUTH_DISABLED === 'true') {
@@ -22,6 +36,11 @@ export async function setupAuth(app) {
 
   const redirectUri = new URL(process.env.OIDC_REDIRECT_URI);
   const secure = redirectUri.protocol === 'https:';
+  // The sign-in cookie must be sent on calls from the frontend. Same site (for example app.x.com and api.x.com):
+  // 'lax' works. Different sites need SESSION_SAMESITE=none, which browsers only accept over https.
+  const sameSite = (process.env.SESSION_SAMESITE || 'lax').toLowerCase();
+  if (!['lax', 'strict', 'none'].includes(sameSite)) throw new Error('SESSION_SAMESITE must be lax, strict or none');
+  if (sameSite === 'none' && !secure) throw new Error('SESSION_SAMESITE=none needs https: set OIDC_REDIRECT_URI to an https address');
   const scope = process.env.OIDC_SCOPE || 'openid profile email';
 
   // Discovery goes through HTTPS_PROXY when the server is started with --use-env-proxy.
@@ -35,7 +54,7 @@ export async function setupAuth(app) {
       secret: process.env.SESSION_SECRET,
       resave: false,
       saveUninitialized: false,
-      cookie: { httpOnly: true, sameSite: 'lax', secure, maxAge: 8 * 3600 * 1000 },
+      cookie: { httpOnly: true, sameSite, secure, maxAge: 8 * 3600 * 1000 },
     }),
   );
 
@@ -101,20 +120,19 @@ export async function setupAuth(app) {
       // Also end the session at the identity provider when it supports that.
       if (config.serverMetadata().end_session_endpoint) {
         const url = client.buildEndSessionUrl(config, {
-          post_logout_redirect_uri: redirectUri.origin,
+          post_logout_redirect_uri: frontendBase() || redirectUri.origin,
           ...(idToken ? { id_token_hint: idToken } : {}),
         });
         return res.redirect(url.href);
       }
-      res.redirect('/auth/login');
+      res.redirect(frontendBase() || '/auth/login');
     });
   });
 
-  // Gate: anything below this requires a signed-in user.
+  // Gate: everything below this requires a signed-in user. This service only serves an API, so callers get a
+  // 401 they can handle; the frontend sends the browser to /auth/login when it sees one.
   app.use((req, res, next) => {
     if (req.session?.user) return next();
-    // API callers get a 401 they can handle; browsers navigating to a page are sent to SSO.
-    if (req.path.startsWith('/logs') || req.path.startsWith('/analyze')) return res.status(401).json({ error: 'Not signed in' });
-    res.redirect(`/auth/login?returnTo=${encodeURIComponent(req.originalUrl)}`);
+    return res.status(401).json({ error: 'Not signed in' });
   });
 }
