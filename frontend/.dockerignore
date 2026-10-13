@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log*
+dist/
+
+# Secrets, and the sample request log (it holds a bearer token and customer details)
+.env
+.env.*
+request.txt
+payload.txt
+
+# Not needed to build the page
+*.md
+.git
+.gitignore
+.github
+scripts/

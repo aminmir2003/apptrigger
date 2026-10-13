@@ -1,0 +1,19 @@
+node_modules
+npm-debug.log*
+
+# Secrets and local state never go into an image
+.env
+.env.*
+secrets/
+keen-tokenizer-*.json
+.session/
+data/
+config.local.json
+
+# Not needed at runtime
+*.md
+.git
+.gitignore
+.github
+scripts/
+_*.mjs
