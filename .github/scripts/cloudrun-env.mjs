@@ -31,20 +31,8 @@ const SETTINGS = [
   ['GITHUB_BRANCH', 'APP_CONFIG_BRANCH'],
   ['GITHUB_TOKEN', 'APP_CONFIG_TOKEN'],
 
-  // TELUS SSO (OpenID Connect). The deploy never sets AUTH_DISABLED, so sign-in is always on.
-  ['OIDC_ISSUER', 'APP_OIDC_ISSUER'],
-  ['OIDC_CLIENT_ID', 'APP_OIDC_CLIENT_ID'],
-  ['OIDC_CLIENT_SECRET', 'APP_OIDC_CLIENT_SECRET'],
-  ['OIDC_REDIRECT_URI', 'APP_OIDC_REDIRECT_URI'],
-  ['OIDC_SCOPE', 'APP_OIDC_SCOPE'],
-  ['SESSION_SECRET', 'APP_SESSION_SECRET'],
-  // Cloud Run gives each service its own run.app address, and browsers treat those as different sites,
-  // so the sign-in cookie has to be allowed across sites. Use "lax" if both are on one custom domain.
-  ['SESSION_SAMESITE', 'APP_SESSION_SAMESITE', 'none'],
-
   // Where the frontend is served from (lets the backend allow it through CORS)
   ['FRONTEND_ORIGIN', 'APP_FRONTEND_URL'],
-  ['FRONTEND_URL', 'APP_FRONTEND_URL'],
 ];
 
 const lines = [];
@@ -55,8 +43,6 @@ for (const [name, source, fallback] of SETTINGS) {
   lines.push(`${name}: ${JSON.stringify(value)}`); // a JSON string is a valid double-quoted YAML string
   names.push(name);
 }
-
-if (names.includes('AUTH_DISABLED')) throw new Error('refusing to deploy with sign-in switched off');
 
 writeFileSync(out, `${lines.join('\n')}\n`, { mode: 0o600 });
 console.log(`Wrote ${names.length} settings to ${out}: ${names.join(', ')}`);

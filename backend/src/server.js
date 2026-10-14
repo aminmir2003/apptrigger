@@ -1,5 +1,4 @@
 import express from 'express';
-import { setupAuth } from './auth.js';
 import { setupCors } from './cors.js';
 import { login as portalLogin, status as portalStatus, logout as portalLogout } from './portalSession.js';
 import { queryLogs } from './logging.js';
@@ -10,13 +9,10 @@ import { getConfig, configSource, chooseKeys } from './githubConfig.js';
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 
-// The frontend is a separate service: let its address call this API (before the sign-in gate, so preflights pass).
+// The frontend is a separate service: let its address call this API.
 setupCors(app);
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
-
-// TELUS SSO: everything registered below this line requires a signed-in user.
-await setupAuth(app);
 
 // GET /logs?search=&from=&to=&service=&revision=&severity=&hours=&limit=&filter=
 // Each returned message is the complete log entry (capped at MAX_MESSAGE_CHARS, default 100000).
@@ -41,7 +37,6 @@ app.get('/info', async (_req, res) => {
   res.json({
     project: process.env.GCP_PROJECT_ID ?? null,
     fuelixModel: process.env.FUELIX_MODEL || null,
-    sso: process.env.AUTH_DISABLED !== 'true',
     cmdbRows,
   });
 });
@@ -84,29 +79,33 @@ app.post('/analyze', async (req, res) => {
   }
 });
 
-// TELUS portal session (Puppeteer). Login opens a browser window on the machine running this server
-// and resolves once TELUS SSO is complete.
-app.post('/portal/login', async (_req, res) => {
-  try {
-    res.json(await portalLogin());
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-app.get('/portal/status', async (_req, res) => {
-  try {
-    res.json(await portalStatus());
-  } catch (err) {
-    res.json({ signedIn: false, error: err.message });
-  }
-});
-app.post('/portal/logout', async (_req, res) => {
-  await portalLogout();
-  res.json({ signedIn: false });
-});
+// TELUS portal session (Puppeteer). Login opens a browser window on the machine running this server.
+// This API has no sign-in, so these routes are OFF unless PORTAL_ENABLED=true: anyone who can reach the server
+// could otherwise open a browser on it or delete the saved portal session. Nothing in the page uses them.
+if (process.env.PORTAL_ENABLED === 'true') {
+  app.post('/portal/login', async (_req, res) => {
+    try {
+      res.json(await portalLogin());
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app.get('/portal/status', async (_req, res) => {
+    try {
+      res.json(await portalStatus());
+    } catch (err) {
+      res.json({ signedIn: false, error: err.message });
+    }
+  });
+  app.post('/portal/logout', async (_req, res) => {
+    await portalLogout();
+    res.json({ signedIn: false });
+  });
+}
 
 const port = process.env.PORT || 3000;
-// With SSO off, only accept connections from this machine.
-const host = process.env.AUTH_DISABLED === 'true' ? '127.0.0.1' : undefined;
-app.listen(port, host, () => console.log(`apptrigger API listening on ${host ?? ''}:${port}`));
+// This API has no sign-in, so on a developer machine it only accepts connections from that machine.
+// Inside Cloud Run (it sets K_SERVICE) or a container (the Dockerfile sets HOST=0.0.0.0) it listens on every address.
+const host = process.env.HOST || (process.env.K_SERVICE ? '0.0.0.0' : '127.0.0.1');
+app.listen(port, host, () => console.log(`apptrigger API listening on ${host}:${port}`));

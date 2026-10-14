@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import LogView from './LogView.jsx';
-import { API_URL, apiFetch } from './api.js';
+import { apiFetch } from './api.js';
 
 // Format a Date for <input type="datetime-local"> (local time).
 const toLocalInput = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -83,7 +83,6 @@ export default function App() {
   const [teams, setTeams] = useState(null); // team (CMDBID.xlsx Description) per log
   const [config, setConfig] = useState({ searchKeys: [], labels: {}, source: null, error: '', loaded: false }); // from the server (GitHub or a local file)
   const [searchKey, setSearchKey] = useState(() => loadSetting('searchKey', null, ALL_KEYS));
-  const [user, setUser] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -146,7 +145,6 @@ export default function App() {
     }
   }
 
-  // Who is signed in (absent when SSO is disabled for local development).
   useEffect(() => saveSetting('resource', resource), [resource]);
   useEffect(() => saveSetting('limit', limit), [limit]);
   useEffect(() => saveSetting('searchKey', searchKey), [searchKey]);
@@ -189,13 +187,6 @@ export default function App() {
     apiFetch('/info')
       .then((r) => (r.ok ? r.json() : null))
       .then((i) => i && setInfo(i))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    apiFetch('/auth/me')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((u) => u && setUser(u))
       .catch(() => {});
   }, []);
 
@@ -416,7 +407,6 @@ export default function App() {
                   <span className="info-h">System</span>
                   <dl className="info-list">
                     <InfoRow label="FuelIX model">{info?.fuelixModel ?? 'Not set'}</InfoRow>
-                    <InfoRow label="Sign-in (SSO)">{info == null ? 'Unknown' : info.sso ? 'On' : 'Off (local use)'}</InfoRow>
                     <InfoRow label="Paste a log">{pasteEnabled ? 'On' : 'Off'}</InfoRow>
                     <InfoRow label="Config source">
                       {config.source ? (config.source.type === 'local' ? `Local file ${config.source.file ?? ''}`.trim() : `${config.source.repo}@${config.source.branch}`) : 'Not set up'}
@@ -455,11 +445,6 @@ export default function App() {
             </span>
             )}
           </span>
-          {user && (
-            <span className="user">
-              {user.name} &middot; <a href={`${API_URL}/auth/logout`}>Sign out</a>
-            </span>
-          )}
         </div>
       </nav>
       <main>

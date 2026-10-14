@@ -33,16 +33,6 @@ permissions:
 # FuelIX
 #   FUELIX_API_KEY, FUELIX_ENDPOINT, FUELIX_MODEL
 #
-# TELUS SSO (OpenID Connect). Sign-in is always on in Cloud Run; there is no way to turn it off here.
-#   OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET
-#   OIDC_REDIRECT_URI        <backend URL>/auth/callback, and register the same address with the identity
-#                            provider. The backend URL is shown at the end of the first run, so run once,
-#                            set this secret, then run again.
-#   SESSION_SECRET           Long random string that signs the session cookie.
-#   OIDC_SCOPE               (optional) defaults to "openid profile email".
-#   SESSION_SAMESITE         (optional) defaults to "none", which is needed because the two services have
-#                            different run.app addresses. Use "lax" if both sit on one custom domain.
-#
 # Team sheet (kept out of git)
 #   CMDBID_XLSX_B64          The CMDBID.xlsx file, base64 encoded. On Windows PowerShell:
 #                              [Convert]::ToBase64String([IO.File]::ReadAllBytes("backend\CMDBID.xlsx")) | Set-Clipboard
@@ -56,6 +46,14 @@ permissions:
 #
 # NOTE: the frontend address is not a secret. It is read from Cloud Run after the frontend is deployed and
 #       given to the backend, and the backend address is baked into the frontend build.
+#
+# ─── Who can reach the deployed app (Settings > Secrets and variables > Actions > Variables) ──────
+# apptrigger has NO sign-in. The API returns production log entries (which can hold customer data) and spends the
+# FuelIX key, so it must not be open to the internet by accident.
+#   PUBLIC_ACCESS            Leave unset: both services are deployed PRIVATE (only Google accounts you grant
+#                            "Cloud Run Invoker" can call them; a plain browser cannot reach the app).
+#                            Set to the word  true  to make both services public (anyone with the link).
+#                            Only do that for a short test, or once something else (a login, IAP, a VPN) protects them.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 env:
@@ -86,16 +84,11 @@ jobs:
           FUELIX_API_KEY: ${{ secrets.FUELIX_API_KEY }}
           FUELIX_ENDPOINT: ${{ secrets.FUELIX_ENDPOINT }}
           FUELIX_MODEL: ${{ secrets.FUELIX_MODEL }}
-          OIDC_ISSUER: ${{ secrets.OIDC_ISSUER }}
-          OIDC_CLIENT_ID: ${{ secrets.OIDC_CLIENT_ID }}
-          OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
-          OIDC_REDIRECT_URI: ${{ secrets.OIDC_REDIRECT_URI }}
-          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           CMDBID_XLSX_B64: ${{ secrets.CMDBID_XLSX_B64 }}
         run: |
           missing=""
           for name in GCP_SA_KEY GCP_PROJECT_ID GCP_REGION AR_REPOSITORY FUELIX_API_KEY FUELIX_ENDPOINT FUELIX_MODEL \
-                      OIDC_ISSUER OIDC_CLIENT_ID OIDC_CLIENT_SECRET OIDC_REDIRECT_URI SESSION_SECRET CMDBID_XLSX_B64; do
+                      CMDBID_XLSX_B64; do
             [ -z "${!name}" ] && missing="$missing $name"
           done
           if [ -n "$missing" ]; then
@@ -150,35 +143,33 @@ jobs:
           APP_CONFIG_PATH: ${{ secrets.CONFIG_GITHUB_PATH }}
           APP_CONFIG_BRANCH: ${{ secrets.CONFIG_GITHUB_BRANCH }}
           APP_CONFIG_TOKEN: ${{ secrets.CONFIG_GITHUB_TOKEN }}
-          APP_OIDC_ISSUER: ${{ secrets.OIDC_ISSUER }}
-          APP_OIDC_CLIENT_ID: ${{ secrets.OIDC_CLIENT_ID }}
-          APP_OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
-          APP_OIDC_REDIRECT_URI: ${{ secrets.OIDC_REDIRECT_URI }}
-          APP_OIDC_SCOPE: ${{ secrets.OIDC_SCOPE }}
-          APP_SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
-          APP_SESSION_SAMESITE: ${{ secrets.SESSION_SAMESITE }}
           APP_FRONTEND_URL: ${{ steps.frontend-url.outputs.url }}
         run: node .github/scripts/cloudrun-env.mjs "$RUNNER_TEMP/backend-env.yaml"
 
       - name: Deploy the backend to Cloud Run
+        env:
+          PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS }}
         run: |
           IMAGE=${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/${BACKEND_SERVICE}
+          # There is no sign-in, so the service is private unless the PUBLIC_ACCESS variable is exactly "true".
+          if [ "$PUBLIC_ACCESS" = "true" ]; then
+            ACCESS=--allow-unauthenticated
+            echo "::warning::PUBLIC_ACCESS=true: the backend is open to anyone with its address (production logs and the FuelIX key are exposed)."
+          else
+            ACCESS=--no-allow-unauthenticated
+          fi
           # --port 8080: the container port Cloud Run forwards to. Cloud Run sets PORT=8080 itself (reserved name).
-          # --allow-unauthenticated: reachable from the internet, but every API call needs a signed-in TELUS SSO
-          #   session (the backend answers 401 otherwise), and the deploy never switches sign-in off.
-          # --max-instances 1: sign-in sessions are kept in the instance's memory, so a second instance would not
-          #   know who is signed in. Raise this only after sessions move to a shared store.
           # --timeout 300: a large batch of logs can take FuelIX a while.
           gcloud run deploy ${BACKEND_SERVICE} \
             --image ${IMAGE}:${{ github.sha }} \
             --region ${{ secrets.GCP_REGION }} \
             --platform managed \
-            --allow-unauthenticated \
+            ${ACCESS} \
             --port 8080 \
             --memory 512Mi \
             --cpu 1 \
             --min-instances 0 \
-            --max-instances 1 \
+            --max-instances 5 \
             --timeout 300 \
             --env-vars-file "$RUNNER_TEMP/backend-env.yaml"
 
@@ -194,7 +185,6 @@ jobs:
             --format 'value(status.url)')
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "Backend deployed at: $URL"
-          echo "Sign-in redirect address to register and store as OIDC_REDIRECT_URI: ${URL}/auth/callback"
 
   # ═══════════════════════════════════════════════════════════════════════════
   # JOB 2: Deploy the frontend (runs after the backend)
@@ -252,14 +242,18 @@ jobs:
           docker push ${IMAGE}:latest
 
       - name: Deploy the frontend to Cloud Run
+        env:
+          PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS }}
         run: |
           IMAGE=${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/${FRONTEND_SERVICE}
+          # Same rule as the backend: private unless the PUBLIC_ACCESS variable is exactly "true".
+          if [ "$PUBLIC_ACCESS" = "true" ]; then ACCESS=--allow-unauthenticated; else ACCESS=--no-allow-unauthenticated; fi
           # No runtime settings: the backend address was baked into the page at build time.
           gcloud run deploy ${FRONTEND_SERVICE} \
             --image ${IMAGE}:${{ github.sha }} \
             --region ${{ secrets.GCP_REGION }} \
             --platform managed \
-            --allow-unauthenticated \
+            ${ACCESS} \
             --port 8080 \
             --memory 256Mi \
             --cpu 1 \
@@ -276,12 +270,17 @@ jobs:
           echo "Frontend deployed at: $URL"
 
       # Needed on the first run (the frontend did not exist when the backend was deployed), harmless after that.
-      # Updates only these two settings; everything else on the backend is left as it is.
+      # Updates only this one setting; everything else on the backend is left as it is.
       - name: Let the backend allow the frontend address
         env:
           FRONTEND_URL: ${{ steps.get-frontend-url.outputs.url }}
+          PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS }}
         run: |
           gcloud run services update ${BACKEND_SERVICE} \
             --region ${{ secrets.GCP_REGION }} \
-            --update-env-vars "FRONTEND_ORIGIN=${FRONTEND_URL},FRONTEND_URL=${FRONTEND_URL}"
-          echo "Open the app at: ${FRONTEND_URL}"
+            --update-env-vars "FRONTEND_ORIGIN=${FRONTEND_URL}"
+          if [ "$PUBLIC_ACCESS" = "true" ]; then
+            echo "Open the app at: ${FRONTEND_URL}"
+          else
+            echo "::notice::Both services are PRIVATE (the PUBLIC_ACCESS variable is not 'true'), so ${FRONTEND_URL} will answer 403 in a plain browser."
+          fi

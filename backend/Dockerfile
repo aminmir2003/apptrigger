@@ -14,6 +14,8 @@ COPY config.example.json CMDBID.xlsx ./
 
 # Cloud Run injects PORT (8080) at runtime. src/server.js reads process.env.PORT.
 ENV NODE_ENV=production
+# This API has no sign-in; inside a container it must listen on every address (otherwise only on localhost).
+ENV HOST=0.0.0.0
 EXPOSE 8080
 
 # Run as the unprivileged user that comes with the image.
