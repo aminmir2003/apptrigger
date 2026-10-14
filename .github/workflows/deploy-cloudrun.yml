@@ -67,6 +67,12 @@ jobs:
   deploy-backend:
     name: Deploy backend to Cloud Run
     runs-on: ubuntu-latest
+    # Handed to the scripts as environment variables, never pasted into the script text, so a stray
+    # character in a secret cannot break the shell (the format is checked in the first step).
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
 
     outputs:
       backend_url: ${{ steps.get-backend-url.outputs.url }}
@@ -96,6 +102,20 @@ jobs:
             exit 1
           fi
 
+          # Format checks. A value pasted with a space, bracket or line break, for example
+          # "northamerica-northeast1 (Montreal)", would otherwise break the later steps with a confusing shell error.
+          region_re='^[a-z]+(-[a-z]+)*[0-9]+$'
+          project_re='^[a-z][a-z0-9-]{4,28}[a-z0-9]$'
+          repo_re='^[a-z]([a-z0-9-]*[a-z0-9])?$'
+          bad=""
+          [[ "$GCP_REGION" =~ $region_re ]] || bad="$bad GCP_REGION (like us-central1: lowercase letters, digits and hyphens only)"
+          [[ "$GCP_PROJECT_ID" =~ $project_re ]] || bad="$bad GCP_PROJECT_ID (like my-project-123)"
+          [[ "$AR_REPOSITORY" =~ $repo_re ]] || bad="$bad AR_REPOSITORY (lowercase letters, digits and hyphens only)"
+          if [ -n "$bad" ]; then
+            echo "::error::Secret(s) not in the expected format. Check for extra spaces, brackets or a line break:$bad"
+            exit 1
+          fi
+
       # The team sheet is internal data, so it is not in git. It comes from a secret and goes only into the image.
       - name: Add the team sheet (CMDBID.xlsx)
         env:
@@ -114,11 +134,11 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use Artifact Registry
-        run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
       - name: Build and push the backend image
         run: |
-          IMAGE=${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/${BACKEND_SERVICE}
+          IMAGE=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${BACKEND_SERVICE}
           docker build -t ${IMAGE}:${{ github.sha }} -t ${IMAGE}:latest ./backend
           docker push ${IMAGE}:${{ github.sha }}
           docker push ${IMAGE}:latest
@@ -128,7 +148,7 @@ jobs:
       - name: Look up the frontend address (if it exists yet)
         id: frontend-url
         run: |
-          URL=$(gcloud run services describe ${FRONTEND_SERVICE} --region ${{ secrets.GCP_REGION }} \
+          URL=$(gcloud run services describe ${FRONTEND_SERVICE} --region "${GCP_REGION}" \
             --format 'value(status.url)' 2>/dev/null || true)
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "Existing frontend address: ${URL:-none yet}"
@@ -150,7 +170,7 @@ jobs:
         env:
           PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS }}
         run: |
-          IMAGE=${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/${BACKEND_SERVICE}
+          IMAGE=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${BACKEND_SERVICE}
           # There is no sign-in, so the service is private unless the PUBLIC_ACCESS variable is exactly "true".
           if [ "$PUBLIC_ACCESS" = "true" ]; then
             ACCESS=--allow-unauthenticated
@@ -162,7 +182,7 @@ jobs:
           # --timeout 300: a large batch of logs can take FuelIX a while.
           gcloud run deploy ${BACKEND_SERVICE} \
             --image ${IMAGE}:${{ github.sha }} \
-            --region ${{ secrets.GCP_REGION }} \
+            --region "${GCP_REGION}" \
             --platform managed \
             ${ACCESS} \
             --port 8080 \
@@ -181,7 +201,7 @@ jobs:
         id: get-backend-url
         run: |
           URL=$(gcloud run services describe ${BACKEND_SERVICE} \
-            --region ${{ secrets.GCP_REGION }} \
+            --region "${GCP_REGION}" \
             --format 'value(status.url)')
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "Backend deployed at: $URL"
@@ -193,6 +213,10 @@ jobs:
     name: Deploy frontend to Cloud Run
     runs-on: ubuntu-latest
     needs: deploy-backend
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
 
     steps:
       - name: Checkout repository
@@ -214,6 +238,20 @@ jobs:
             exit 1
           fi
 
+          # Format checks. A value pasted with a space, bracket or line break, for example
+          # "northamerica-northeast1 (Montreal)", would otherwise break the later steps with a confusing shell error.
+          region_re='^[a-z]+(-[a-z]+)*[0-9]+$'
+          project_re='^[a-z][a-z0-9-]{4,28}[a-z0-9]$'
+          repo_re='^[a-z]([a-z0-9-]*[a-z0-9])?$'
+          bad=""
+          [[ "$GCP_REGION" =~ $region_re ]] || bad="$bad GCP_REGION (like us-central1: lowercase letters, digits and hyphens only)"
+          [[ "$GCP_PROJECT_ID" =~ $project_re ]] || bad="$bad GCP_PROJECT_ID (like my-project-123)"
+          [[ "$AR_REPOSITORY" =~ $repo_re ]] || bad="$bad AR_REPOSITORY (lowercase letters, digits and hyphens only)"
+          if [ -n "$bad" ]; then
+            echo "::error::Secret(s) not in the expected format. Check for extra spaces, brackets or a line break:$bad"
+            exit 1
+          fi
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -223,7 +261,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker to use Artifact Registry
-        run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
       - name: Build and push the frontend image
         env:
@@ -231,7 +269,7 @@ jobs:
         # VITE_API_URL is baked into the page by Vite at build time (see frontend/src/api.js).
         run: |
           [ -n "$BACKEND_URL" ] || { echo "::error::The backend job did not report its address"; exit 1; }
-          IMAGE=${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/${FRONTEND_SERVICE}
+          IMAGE=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${FRONTEND_SERVICE}
           echo "Building the frontend with VITE_API_URL=${BACKEND_URL}"
           docker build \
             --build-arg VITE_API_URL=${BACKEND_URL} \
@@ -245,13 +283,13 @@ jobs:
         env:
           PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS }}
         run: |
-          IMAGE=${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/${FRONTEND_SERVICE}
+          IMAGE=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${FRONTEND_SERVICE}
           # Same rule as the backend: private unless the PUBLIC_ACCESS variable is exactly "true".
           if [ "$PUBLIC_ACCESS" = "true" ]; then ACCESS=--allow-unauthenticated; else ACCESS=--no-allow-unauthenticated; fi
           # No runtime settings: the backend address was baked into the page at build time.
           gcloud run deploy ${FRONTEND_SERVICE} \
             --image ${IMAGE}:${{ github.sha }} \
-            --region ${{ secrets.GCP_REGION }} \
+            --region "${GCP_REGION}" \
             --platform managed \
             ${ACCESS} \
             --port 8080 \
@@ -264,7 +302,7 @@ jobs:
         id: get-frontend-url
         run: |
           URL=$(gcloud run services describe ${FRONTEND_SERVICE} \
-            --region ${{ secrets.GCP_REGION }} \
+            --region "${GCP_REGION}" \
             --format 'value(status.url)')
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "Frontend deployed at: $URL"
@@ -277,7 +315,7 @@ jobs:
           PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS }}
         run: |
           gcloud run services update ${BACKEND_SERVICE} \
-            --region ${{ secrets.GCP_REGION }} \
+            --region "${GCP_REGION}" \
             --update-env-vars "FRONTEND_ORIGIN=${FRONTEND_URL}"
           if [ "$PUBLIC_ACCESS" = "true" ]; then
             echo "Open the app at: ${FRONTEND_URL}"
