@@ -50,7 +50,8 @@ permissions:
 # ─── Who can reach the deployed app (Settings > Secrets and variables > Actions > Variables) ──────
 # apptrigger has NO sign-in. The API returns production log entries (which can hold customer data) and spends the
 # FuelIX key, so it must not be open to the internet by accident.
-#   PUBLIC_ACCESS            Leave unset: both services are deployed PRIVATE (only Google accounts you grant
+#   PUBLIC_ACCESS            (also accepted under the name _PUBLIC_ACCESS)
+#                            Leave unset: both services are deployed PRIVATE (only Google accounts you grant
 #                            "Cloud Run Invoker" can call them; a plain browser cannot reach the app).
 #                            Set to the word  true  to make both services public (anyone with the link).
 #                            Only do that for a short test, or once something else (a login, IAP, a VPN) protects them.
@@ -168,7 +169,7 @@ jobs:
 
       - name: Deploy the backend to Cloud Run
         env:
-          PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS }}
+          PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS || vars._PUBLIC_ACCESS }}
         run: |
           IMAGE=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${BACKEND_SERVICE}
           # There is no sign-in, so the service is private unless the PUBLIC_ACCESS variable is exactly "true".
@@ -281,7 +282,7 @@ jobs:
 
       - name: Deploy the frontend to Cloud Run
         env:
-          PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS }}
+          PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS || vars._PUBLIC_ACCESS }}
         run: |
           IMAGE=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${FRONTEND_SERVICE}
           # Same rule as the backend: private unless the PUBLIC_ACCESS variable is exactly "true".
@@ -312,7 +313,7 @@ jobs:
       - name: Let the backend allow the frontend address
         env:
           FRONTEND_URL: ${{ steps.get-frontend-url.outputs.url }}
-          PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS }}
+          PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS || vars._PUBLIC_ACCESS }}
         run: |
           gcloud run services update ${BACKEND_SERVICE} \
             --region "${GCP_REGION}" \
