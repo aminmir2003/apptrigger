@@ -16,6 +16,9 @@ backend/CMDBID.xlsx
 !.env.example
 secrets/
 keen-tokenizer-*.json
+cio-notification-*.json
+# Any .json file directly in the repo root is a credentials key (the project's own config lives in backend/ and frontend/)
+/*.json
 *.pem
 *.key
 Fuelix.txt

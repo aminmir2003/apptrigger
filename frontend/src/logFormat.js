@@ -99,10 +99,23 @@ const escapeRegex = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function findIdentifiers(text, keys) {
   const found = [];
   for (const key of keys) {
-    const m = new RegExp(`(?<![A-Za-z0-9_])${escapeRegex(key)}["']?\\s*[:=]\\s*["']?([\\w.-]+)`, 'i').exec(text);
+    const m = new RegExp(`(?<![A-Za-z0-9_])${escapeRegex(key)}["']?\\s*[:=]\\s*["']?([\\w.@+-]+)`, 'i').exec(text);
     if (m) found.push({ name: key, value: m[1] });
   }
   return found;
+}
+
+/**
+ * Value of each named header/field in the text (null when absent), in the order given.
+ * A "-" before a name counts as part of a longer name, so "Kong-Request-ID" does not match inside "X-Kong-Request-Id".
+ */
+export function findHeaderValues(text, names) {
+  return names.map((name) => {
+    // Quotes may be escaped (\") when the value sits inside a JSON string, and a ";" before the name means it is
+    // part of another header's value (for example "X-dynaTrace-Application=v=2;appId=...").
+    const m = new RegExp(`(?<![A-Za-z0-9_;-])${escapeRegex(name)}[\\\\"']*\\s*[:=]\\s*[\\\\"']*([\\w.@+-]+)`, 'i').exec(text);
+    return { name, value: m ? m[1] : null };
+  });
 }
 
 // Show only the shape of a bearer token, never the token itself.

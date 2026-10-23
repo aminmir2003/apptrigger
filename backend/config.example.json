@@ -4,12 +4,37 @@
     "X-Kong-Request-Id",
     "XID",
     "TID",
-    "relfrozenxid",
     "X-Consumer-Username"
   ],
   "labels": {
     "X-Consumer-Username": "Consumer",
     "X-Kong-Request-Id": "Request ID",
     "CMDBID": "CMDB ID"
-  }
+  },
+  "logQueries": [
+    {
+      "project": "cdo-gke-private-pr-7712d7",
+      "resource": "k8s_container",
+      "filter": [
+        "resource.type=\"k8s_container\"",
+        "resource.labels.project_id=\"cdo-gke-private-pr-7712d7\"",
+        "resource.labels.location=\"northamerica-northeast1\"",
+        "resource.labels.cluster_name=\"private-na-ne1-001\"",
+        "resource.labels.namespace_name=\"notify-communication\"",
+        "labels.k8s-pod/app=\"communication-api-sender-pr\""
+      ]
+    },
+    {
+      "project": "cdo-gke-private-np-1a8686",
+      "resource": "k8s_container",
+      "filter": [
+        "resource.type=\"k8s_container\"",
+        "resource.labels.project_id=\"cdo-gke-private-np-1a8686\"",
+        "resource.labels.location=\"northamerica-northeast1\"",
+        "resource.labels.cluster_name=\"private-na-ne1-001\"",
+        "resource.labels.namespace_name=\"notify-communication\"",
+        "labels.k8s-pod/app=\"communication-api-scheduler-dv\""
+      ]
+    }
+  ]
 }

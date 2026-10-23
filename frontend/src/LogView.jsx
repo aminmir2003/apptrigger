@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { findIdentifiers, maskHeaderValue, parseLog } from './logFormat.js';
+import { findIdentifiers, parseLog } from './logFormat.js';
 
 // Colours JSON tokens: keys, strings, numbers and true/false/null each get their own class.
 const TOKEN = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
@@ -100,7 +100,7 @@ function Identifiers({ ids, match }) {
 
 /**
  * Shows a log message, whether it was pasted or fetched from Cloud Logging.
- * Request logs get identifiers, a header table and an indented JSON body; structured (JSON) entries
+ * Request logs show their indented JSON body only; structured (JSON) entries
  * are indented and coloured; anything else is shown as plain text.
  * @param {{ message: string, match?: {key: string, value: string}|null, keys: string[] }} props
  */
@@ -138,34 +138,11 @@ export default function LogView({ message, match, keys }) {
     );
   }
 
-  const { headers, body, rawBody } = parsed.request;
-  const headerIds = keys.map((k) => headers.find((h) => same(h.name, k))).filter(Boolean);
-  const others = headers.filter((h) => !keys.some((k) => same(k, h.name)));
+  // A request log shows its body only; the headers that matter are in the table beside the log.
+  const { body, rawBody } = parsed.request;
 
   return (
     <div className="lv">
-      <Identifiers ids={headerIds} match={match} />
-
-      <details open>
-        <summary>
-          Request headers <span className="count">{others.length}</span>
-          <CopyButton
-            label="Copy request headers"
-            getText={() => others.map((h) => `${h.name}: ${maskHeaderValue(h.name, h.value)}`).join('\n')}
-          />
-        </summary>
-        <table className="lv-table">
-          <tbody>
-            {others.map((h) => (
-              <tr key={h.name}>
-                <th scope="row">{h.name}</th>
-                <td>{maskHeaderValue(h.name, h.value)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </details>
-
       {rawBody && (
         <details open>
           <summary>

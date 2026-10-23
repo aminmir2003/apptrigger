@@ -47,12 +47,12 @@ const text = (v) => (v == null ? '' : String(v).trim());
 
 /**
  * Validate the JSON from GitHub and turn it into the shape the app uses.
- * @returns {{ searchKeys: string[], labels: Record<string,string> }}
+ * @returns {{ searchKeys: string[], labels: Record<string,string>, logQueries: {project: string, resource: string, filter: string[]}[] }}
  */
 export function parseConfig(json) {
   if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error('config must be a JSON object');
 
-  const { searchKeys, labels = {} } = json;
+  const { searchKeys, labels = {}, logQueries = [] } = json;
   if (!Array.isArray(searchKeys) || searchKeys.length === 0 || searchKeys.length > MAX_KEYS) {
     throw new Error(`config "searchKeys" must be a list of 1-${MAX_KEYS} names`);
   }
@@ -66,7 +66,20 @@ export function parseConfig(json) {
   const cleanLabels = {};
   for (const [k, v] of Object.entries(labels)) if (text(v)) cleanLabels[k] = text(v);
 
-  return { searchKeys: keys, labels: cleanLabels };
+  // Ready-made log queries per project. When the chosen log source and the project match one of these, its lines
+  // (each one a Cloud Logging query line, all joined with AND) replace the generic "resource.type=..." filter.
+  if (!Array.isArray(logQueries) || logQueries.length > 20) throw new Error('config "logQueries" must be a list of at most 20 entries');
+  const queries = logQueries.map((q, i) => {
+    const where = `config "logQueries" entry ${i + 1}`;
+    if (!q || typeof q !== 'object' || Array.isArray(q)) throw new Error(`${where} must be an object`);
+    if (typeof q.project !== 'string' || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(q.project)) throw new Error(`${where} needs a "project" (a Google Cloud project id)`);
+    if (typeof q.resource !== 'string' || !/^[a-z0-9_]{1,60}$/.test(q.resource)) throw new Error(`${where} needs a "resource" such as k8s_container`);
+    const lines = Array.isArray(q.filter) ? q.filter.map(text).filter(Boolean) : [];
+    if (lines.length === 0 || lines.length > 30 || lines.some((l) => l.length > 500)) throw new Error(`${where} needs a "filter" list of 1-30 query lines`);
+    return { project: q.project, resource: q.resource, filter: lines };
+  });
+
+  return { searchKeys: keys, labels: cleanLabels, logQueries: queries };
 }
 
 async function download() {

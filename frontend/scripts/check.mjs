@@ -38,6 +38,13 @@ const ids = findIdentifiers(text, KEYS);
 check('  relfrozenxid found in plain text', ids.length === 1 && ids[0].value === '101892', ids);
 check('  "XID" is not matched inside "relfrozenxid"', !ids.some((i) => i.name === 'XID'), ids);
 
+// 5. E-mail addresses are one value (the "@" must not end it), in plain, = and quoted-JSON forms.
+const emailKeys = [...KEYS, 'principal_email'];
+const email = (text) => findIdentifiers(text, emailKeys).find((i) => i.name === 'principal_email')?.value;
+check('principal_email: user@telus.com', email('authenticationInfo principal_email: jean.dupont+x@telus.com, next') === 'jean.dupont+x@telus.com', email('principal_email: jean.dupont+x@telus.com, next'));
+check('  principal_email=… form', email('principal_email=a@b.com;') === 'a@b.com', email('principal_email=a@b.com;'));
+check('  quoted JSON form', email('{"principal_email":"a.b@c.example.com"}') === 'a.b@c.example.com', email('{"principal_email":"a.b@c.example.com"}'));
+
 if (failed > 0) {
   console.error(`\n${failed} check(s) failed`);
   process.exit(1);

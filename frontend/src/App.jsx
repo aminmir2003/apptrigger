@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import LogView from './LogView.jsx';
 import { apiFetch } from './api.js';
+import { findHeaderValues } from './logFormat.js';
+
+// A Cloud Logging insertId: lowercase letters and digits, both present, like "2hz8yue1s9cs". Template names are
+// upper case with underscores, so they never look like this.
+const INSERT_ID_SHAPE = /^(?=.*\d)(?=.*[a-z])[a-z0-9]{8,24}$/;
+
+// Example requests offered under an empty chat box; clicking one fills the box in.
+const EXAMPLES = [
+  'Search triggering application of NOTIFY_DATA_ROLLOVER_KOODO from today',
+  'Who triggered NOTIFY_DATA_ROLLOVER_KOODO in the last 5 days?',
+  'Triggering application of NOTIFY_DATA_ROLLOVER_KOODO from Jan-2026 to Oct 2026',
+];
+
+// Request headers shown in the table beside every log.
+const TRACE_HEADERS = ['X-Consumer-Username', 'X-Consumer-ID', 'Kong-Request-ID', 'X-Kong-Request-Id', 'appId', 'originatorApplicationId'];
 
 // Format a Date for <input type="datetime-local"> (local time).
 const toLocalInput = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -26,7 +41,49 @@ const PRESETS = [
   { id: '5m', label: 'Last 5 months', range: () => [monthsAgo(5), new Date()] },
 ];
 
+// Turns the time range found in a typed request ({ kind, ... } from the server) into dates in this browser's time zone.
+// Returns { range: [from, to], label, preset } (preset is set when it is the same as one of the Time menu choices),
+// or { error } when the request cannot be searched.
+const PRESET_FOR_DAYS = { 5: '5d', 10: '10d', 30: '30d' };
+const fmtDay = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+};
+function resolveRange(spec) {
+  const now = new Date();
+  const preset = (id) => ({ range: PRESETS.find((p) => p.id === id).range(), label: PRESETS.find((p) => p.id === id).label, preset: id });
+  switch (spec.kind) {
+    case 'today':
+      return preset('today');
+    case 'yesterday': {
+      const start = startOfToday();
+      start.setDate(start.getDate() - 1);
+      return { range: [start, new Date(startOfToday().getTime() - 1)], label: 'Yesterday', preset: null };
+    }
+    case 'days':
+      return PRESET_FOR_DAYS[spec.days]
+        ? preset(PRESET_FOR_DAYS[spec.days])
+        : { range: [daysAgo(spec.days), now], label: `Last ${spec.days} day${spec.days === 1 ? '' : 's'}`, preset: null };
+    case 'months':
+      return spec.months === 5
+        ? preset('5m')
+        : { range: [monthsAgo(spec.months), now], label: `Last ${spec.months} month${spec.months === 1 ? '' : 's'}`, preset: null };
+    case 'dates': {
+      const [fy, fm, fd] = spec.from.split('-').map(Number);
+      const [ty, tm, td] = spec.to.split('-').map(Number);
+      const start = new Date(fy, fm - 1, fd, 0, 0, 0, 0);
+      const end = new Date(ty, tm - 1, td, 23, 59, 59, 999);
+      if (start > now) return { error: `${fmtDay(spec.from)} is in the future, so there are no logs to search yet.` };
+      const label = spec.from === spec.to ? fmtDay(spec.from) : `${fmtDay(spec.from)} – ${fmtDay(spec.to)}`;
+      return { range: [start, end > now ? now : end], label, preset: null };
+    }
+    default:
+      return null;
+  }
+}
+
 const RESOURCES = [
+  { id: 'all', label: 'All' },
   { id: 'cloud_run_revision', label: 'Cloud Run' },
   { id: 'cloudsql_database', label: 'Cloud SQL' },
   { id: 'k8s_container', label: 'GKE Container' },
@@ -50,7 +107,9 @@ const saveSetting = (name, value) => {
   } catch {}
 };
 
-const fmtMs = (ms) => (ms == null ? 'n/a' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+const fmtDateTime = (d) => d.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+const fmtMs =(ms) => (ms == null ? 'n/a' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
 
 function InfoRow({ label, children }) {
   return (
@@ -64,8 +123,8 @@ function InfoRow({ label, children }) {
 export default function App() {
   const [search, setSearch] = useState('');
   const [resource, setResource] = useState(() => loadSetting('resource', RESOURCES.map((r) => r.id), 'k8s_container'));
+  const [env, setEnv] = useState(() => loadSetting('env', ['np', 'pr'], 'np')); // which environment's project is searched
   const [preset, setPreset] = useState('today'); // preset id or 'custom'
-  const [editingTime, setEditingTime] = useState(false);
   const [from, setFrom] = useState(() => toLocalInput(startOfToday()));
   const [to, setTo] = useState(() => toLocalInput(new Date()));
   const [limit, setLimit] = useState(() => loadSetting('limit', LIMITS, '500'));
@@ -85,7 +144,14 @@ export default function App() {
   const [searchKey, setSearchKey] = useState(() => loadSetting('searchKey', null, ALL_KEYS));
   const [analyzing, setAnalyzing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [interpreting, setInterpreting] = useState(false); // FuelIX is reading the typed request
+  const [understood, setUnderstood] = useState(null); // what the last request was turned into: { search, time, env, by }
   const [error, setError] = useState('');
+  // The server decides which environments exist (NP / PR); a saved choice it no longer offers falls back to its first one.
+  const busy = interpreting || loading || analyzing;
+  const composerRef = useRef(null);
+  const envs = info?.environments ?? [];
+  const activeEnv = envs.find((e) => e.id === env) ?? envs[0] ?? null;
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -105,20 +171,69 @@ export default function App() {
       return;
     }
     if (!search.trim()) return;
+    setError('');
+    setInterpreting(true);
+    // FuelIX reads the typed request and says what to search for. If it can't be reached, the text is searched as typed.
+    let plan;
+    try {
+      const res = await apiFetch('/interpret', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: search }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      plan = body;
+    } catch {
+      plan = { search: search.trim(), range: null, env: null, by: 'exact' };
+    } finally {
+      setInterpreting(false);
+    }
+    if (!plan.search) {
+      setUnderstood(null);
+      setError("I couldn't find a template name in that. Try: can you search triggering application of NOTIFY_DATA_ROLLOVER_KOODO");
+      return;
+    }
+
+    // A time window or environment named in the request wins over the page's own choices (and is shown there).
+    const envId = plan.env && envs.some((x) => x.id === plan.env) ? plan.env : activeEnv?.id;
+    if (envId && envId !== activeEnv?.id) setEnv(envId);
     let range;
-    if (preset === 'custom') {
-      range = [from && new Date(from), to && new Date(to)];
-      if (range[0] && range[1] && range[0] > range[1]) {
-        setError('"From" must be before "To".');
-        return;
+    let timeLabel;
+    const asked = plan.range ? resolveRange(plan.range) : null;
+    if (asked?.error) {
+      setError(asked.error);
+      return;
+    }
+    if (asked) {
+      // Remember the range asked for (the "Cloud logs" card shows it): a matching preset, otherwise a custom range.
+      range = asked.range;
+      timeLabel = asked.label;
+      setPreset(asked.preset ?? 'custom');
+      if (!asked.preset) {
+        setFrom(toLocalInput(range[0]));
+        setTo(toLocalInput(range[1]));
       }
     } else {
-      range = PRESETS.find((p) => p.id === preset).range();
+      // The request named no time, so it is Today (not whatever an earlier request asked for).
+      const today = resolveRange({ kind: 'today' });
+      range = today.range;
+      timeLabel = today.label;
+      setPreset('today');
     }
+    setUnderstood({ search: plan.search, time: timeLabel, env: envs.find((x) => x.id === envId)?.label ?? null, by: plan.by });
+    await runSearch(plan.search, range, envId);
+  }
+
+  // Search Cloud Logging for the term, then look up the triggering application for what was found.
+  async function runSearch(term, range, envId) {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ search, resource, limit });
+      // A Cloud Logging insertId is looked up directly (any kind of log), not searched for as text.
+      const params = new URLSearchParams({ resource, limit });
+      params.set(INSERT_ID_SHAPE.test(term) ? 'insertId' : 'search', term);
+      if (envId) params.set('env', envId);
       if (range[0]) params.set('from', range[0].toISOString());
       if (range[1]) params.set('to', range[1].toISOString());
       const t0 = performance.now();
@@ -132,7 +247,7 @@ export default function App() {
       }
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
       setLogs(body);
-      setStats({ logs: body.length, searchMs: Math.round(performance.now() - t0), at: Date.now() });
+      setStats({ logs: body.length, searchMs: Math.round(performance.now() - t0), at: Date.now(), range });
       setValues(null);
       setTeams(null);
       // Second step of the single button: look up the triggering application for what was found.
@@ -145,7 +260,16 @@ export default function App() {
     }
   }
 
+  // The box grows with what is typed (up to a few lines), like a chat composer.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [search]);
+
   useEffect(() => saveSetting('resource', resource), [resource]);
+  useEffect(() => saveSetting('env', env), [env]);
   useEffect(() => saveSetting('limit', limit), [limit]);
   useEffect(() => saveSetting('searchKey', searchKey), [searchKey]);
   useEffect(() => saveSetting('paste', String(pasteEnabled)), [pasteEnabled]);
@@ -229,9 +353,22 @@ export default function App() {
     }
   }
 
+  const infoTimer = useRef(null);
+  useEffect(() => () => clearTimeout(infoTimer.current), []); // no timer left running after unmount
   const closeInfo = () => {
+    clearTimeout(infoTimer.current);
     setInfoOpen(false);
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  };
+  const openInfo = () => {
+    clearTimeout(infoTimer.current);
+    setInfoOpen(true);
+  };
+  // Closing waits a moment after the pointer leaves, so crossing from the label onto the window never closes it;
+  // being over either one cancels the close.
+  const closeInfoSoon = () => {
+    clearTimeout(infoTimer.current);
+    infoTimer.current = setTimeout(closeInfo, 250);
   };
 
   const rangeText =
@@ -245,8 +382,26 @@ export default function App() {
   return (
     <>
       <nav className="topbar">
-        <img className="topbar-logo" src="/telus_logo.png" alt="TELUS" />
+        <img className="topbar-logo" src="/TELUS_Logo.svg" alt="TELUS" />
         <div className="topbar-right">
+          {envs.length > 1 && (
+            <div className="env-switch" role="group" aria-label="Environment">
+              <span className="env-label">Environment:</span>
+              <div className="chips">
+                {envs.map((e) => (
+                  <button
+                    type="button"
+                    key={e.id}
+                    className={`chip ${activeEnv?.id === e.id ? 'active' : ''}`}
+                    title={e.project}
+                    onClick={() => setEnv(e.id)}
+                  >
+                    {e.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="settings" ref={settingsRef}>
             <button
               type="button"
@@ -295,7 +450,7 @@ export default function App() {
                           <option key={r.id} value={r.id}>{r.label}</option>
                         ))}
                       </select>
-                      <p className="field-help">Where the logs are read from: Cloud Run services, Cloud SQL databases or GKE containers.</p>
+                      <p className="field-help">Where the logs are read from: Cloud Run services, Cloud SQL databases, GKE containers, or All of them together (the search then runs across every log type in the project).</p>
                     </div>
 
                     <div className="field">
@@ -359,7 +514,8 @@ export default function App() {
             className={`topbar-note info${infoOpen ? ' open' : ''}`}
             tabIndex={0}
             aria-describedby="cloud-info"
-            onMouseEnter={() => setInfoOpen(true)}
+            onMouseEnter={openInfo}
+            onMouseLeave={closeInfoSoon}
             onFocus={(e) => e.currentTarget.matches(':focus-visible') && setInfoOpen(true)}
             onKeyDown={(e) => e.key === 'Escape' && closeInfo()}
           >
@@ -384,7 +540,7 @@ export default function App() {
                   <dl className="info-list">
                     <InfoRow label="Search text">{pasteEnabled && pasted.trim() ? 'A pasted log' : search.trim() || 'Nothing entered yet'}</InfoRow>
                     <InfoRow label="Log source">{RESOURCES.find((r) => r.id === resource)?.label ?? resource}</InfoRow>
-                    <InfoRow label="Project">{info?.project ?? 'Not available'}</InfoRow>
+                    <InfoRow label="Project">{activeEnv ? `${activeEnv.project} (${activeEnv.label})` : 'Not available'}</InfoRow>
                     <InfoRow label="Time range">{rangeText}</InfoRow>
                     <InfoRow label="Max results">{limit} logs, newest first</InfoRow>
                     <InfoRow label="Search key">{searchKey === ALL_KEYS ? 'All keys' : searchKey}</InfoRow>
@@ -441,7 +597,7 @@ export default function App() {
                 </span>
               </span>
 
-              <span className="info-foot">Settings are saved in this browser. Change them with the gear icon or Edit time.</span>
+              <span className="info-foot">Settings are saved in this browser. Change them with the gear icon. Name a time range in your request, such as "last 5 days".</span>
             </span>
             )}
           </span>
@@ -456,18 +612,80 @@ export default function App() {
         <img className="hero-logo" src="/logo_cub.png" alt="Logo" />
       </section>
       <form onSubmit={onSubmit} className="panel">
-        <div className="row">
-          <input
-            className="search"
+        {!logs && !busy && !understood && <h2 className="chat-title">Which template do you want to trace?</h2>}
+
+        <div className="composer">
+          <textarea
+            ref={composerRef}
+            className="composer-input"
+            rows={1}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Searching Template"
+            onKeyDown={(e) => {
+              // Enter sends, Shift+Enter makes a new line (and never send while an input method is composing).
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                if (!busy) e.currentTarget.form.requestSubmit();
+              }
+            }}
+            placeholder="Ask anything, e.g. who triggered NOTIFY_DATA_ROLLOVER_KOODO in the last 5 days?"
+            aria-label="Ask which application triggered a template"
+            spellCheck={false}
             autoFocus
           />
-          <button className="btn-primary" disabled={loading || analyzing || !(search.trim() || (pasteEnabled && pasted.trim()))}>
-            {analyzing ? 'Getting app name…' : loading ? 'Searching…' : 'Get Triggering App Name'}
-          </button>
+          <div className="composer-bar">
+            <button
+              className="send-btn"
+              aria-label="Find the triggering application"
+              title="Find the triggering application"
+              disabled={busy || !(search.trim() || (pasteEnabled && pasted.trim()))}
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <path fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5.5 11.5L12 5l6.5 6.5" />
+              </svg>
+            </button>
+          </div>
         </div>
+
+        {!search.trim() && !busy && (
+          <div className="suggestions" aria-label="Example requests">
+            {EXAMPLES.map((text) => (
+              <button
+                type="button"
+                key={text}
+                className="suggestion"
+                onClick={() => {
+                  setSearch(text);
+                  composerRef.current?.focus();
+                }}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {(busy || understood) && (
+          <p className="chat-status" role="status">
+            {busy ? (
+              <span className="finding">
+                {interpreting ? 'Reading your request' : analyzing ? 'Finding the triggering application' : 'Searching the logs'}
+                <span className="dots" aria-hidden="true">
+                  <i>.</i>
+                  <i>.</i>
+                  <i>.</i>
+                </span>
+              </span>
+            ) : (
+              <>
+                {understood.by === 'exact' ? 'FuelIX could not be reached, so I searched your text as typed: ' : 'Searched for '}
+                <strong>{understood.search}</strong>
+                {' · '}{understood.time}
+                {understood.env && <>{' · '}{understood.env}</>}
+              </>
+            )}
+          </p>
+        )}
 
         {pasteEnabled && (
           <>
@@ -497,53 +715,6 @@ export default function App() {
           </>
         )}
 
-        <div className="time">
-          <span className="time-label">
-            Time: <strong>{preset === 'custom' ? 'Custom range' : PRESETS.find((p) => p.id === preset).label}</strong>
-          </span>
-          <button type="button" className="link" onClick={() => setEditingTime((v) => !v)}>
-            {editingTime ? 'Done' : 'Edit time'}
-          </button>
-        </div>
-
-        {editingTime && (
-          <div className="time-panel">
-            <div className="chips">
-              {PRESETS.map((p) => (
-                <button
-                  type="button"
-                  key={p.id}
-                  className={`chip ${preset === p.id ? 'active' : ''}`}
-                  onClick={() => {
-                    setPreset(p.id);
-                    setEditingTime(false); // close the panel once a range is picked
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
-              <button
-                type="button"
-                className={`chip ${preset === 'custom' ? 'active' : ''}`}
-                onClick={() => setPreset('custom')}
-              >
-                Custom range
-              </button>
-            </div>
-            {preset === 'custom' && (
-              <div className="row">
-                <label>
-                  From
-                  <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} />
-                </label>
-                <label>
-                  To
-                  <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} />
-                </label>
-              </div>
-            )}
-          </div>
-        )}
       </form>
 
       {config.error && <p className="error">Could not load the configuration: {config.error}</p>}
@@ -551,7 +722,10 @@ export default function App() {
       {logs && logs.length === 0 && <p className="no-results">No Search Result Found</p>}
       {logs && logs.length > 0 && (
         <p className="count">
-          Showing {logs.length} logs, newest first ({logs[logs.length - 1].timestamp} → {logs[0].timestamp})
+          Showing {logs.length} logs, newest first
+          {stats?.range?.[0] && stats?.range?.[1]
+            ? ` (searched ${fmtDateTime(stats.range[0])} → ${fmtDateTime(stats.range[1])})`
+            : ` (${logs[logs.length - 1].timestamp} → ${logs[0].timestamp})`}
           {logs.length >= Number(limit) && ' — limit reached, older matches are hidden. Raise Max results in Settings (gear icon) or narrow the range.'}
         </p>
       )}
@@ -597,6 +771,16 @@ export default function App() {
             ) : (
               <p className="hint no-key">Not able to find the App name, please try again with different Key</p>
             )}
+            <table className="trace-table">
+              <tbody>
+                {findHeaderValues(log.message, TRACE_HEADERS).map(({ name, value }) => (
+                  <tr key={name}>
+                    <th scope="row">{name}</th>
+                    <td className={value ? '' : 'muted'}>{value ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </aside>
         </article>
       ))}

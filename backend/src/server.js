@@ -1,8 +1,8 @@
 import express from 'express';
 import { setupCors } from './cors.js';
 import { login as portalLogin, status as portalStatus, logout as portalLogout } from './portalSession.js';
-import { queryLogs } from './logging.js';
-import { extractIds } from './fuelix.js';
+import { queryLogs, environments } from './logging.js';
+import { extractIds, interpretPrompt } from './fuelix.js';
 import { pickTeams, cmdbRowCount } from './cmdb.js';
 import { getConfig, configSource, chooseKeys } from './githubConfig.js';
 
@@ -14,12 +14,28 @@ setupCors(app);
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
-// GET /logs?search=&from=&to=&service=&revision=&severity=&hours=&limit=&filter=
+// GET /logs?env=np|pr&search=&insertId=&from=&to=&service=&revision=&severity=&hours=&limit=&filter=
 // Each returned message is the complete log entry (capped at MAX_MESSAGE_CHARS, default 100000).
 app.get('/logs', async (req, res) => {
   try {
-    const { search, resource, service, revision, severity, filter, from, to, hours, limit } = req.query;
-    res.json(await queryLogs({ search, resource, service, revision, severity, filter, from, to, hours: Number(hours) || 1, limit }));
+    const { env, search, insertId, resource, service, revision, severity, filter, from, to, hours, limit } = req.query;
+    res.json(await queryLogs({ env, search, insertId, resource, service, revision, severity, filter, from, to, hours: Number(hours) || 1, limit }));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /interpret { prompt } -> { search, range, env, by }
+// Reads a request typed in the chat box ("can you search triggering application of NOTIFY_DATA_ROLLOVER_KOODO")
+// and returns what to search for. search is null when the request holds nothing to look for.
+app.post('/interpret', async (req, res) => {
+  try {
+    const { prompt } = req.body ?? {};
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 2000) {
+      return res.status(400).json({ error: 'prompt must be a non-empty string of at most 2000 characters' });
+    }
+    res.json(await interpretPrompt(prompt));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -35,7 +51,7 @@ app.get('/info', async (_req, res) => {
     // a missing or unreadable sheet is reported as unknown, not as an error
   }
   res.json({
-    project: process.env.GCP_PROJECT_ID ?? null,
+    environments,
     fuelixModel: process.env.FUELIX_MODEL || null,
     cmdbRows,
   });

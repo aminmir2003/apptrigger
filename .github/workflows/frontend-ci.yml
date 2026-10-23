@@ -39,6 +39,11 @@ jobs:
             echo "::error::A secrets file, sample log or saved login is tracked by git. Remove it from the repository and rotate any secret in it."
             exit 1
           fi
+          # Also look inside the files: a Google service-account key is caught whatever it is called.
+          if git grep -l -E '"type": *"service_account"|BEGIN (RSA |EC )?PRIVATE KEY' -- . ':!*.md'; then
+            echo "::error::A Google service-account key or private key is committed. Remove it, rotate the key in Google Cloud, and keep it out of git."
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
