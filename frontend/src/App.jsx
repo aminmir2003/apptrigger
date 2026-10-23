@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import LogView from './LogView.jsx';
 import { apiFetch } from './api.js';
-import { findHeaderValues } from './logFormat.js';
+import { findHeaderValues, findSenderName } from './logFormat.js';
 
 // A Cloud Logging insertId: lowercase letters and digits, both present, like "2hz8yue1s9cs". Template names are
 // upper case with underscores, so they never look like this.
@@ -385,21 +385,17 @@ export default function App() {
         <img className="topbar-logo" src="/TELUS_Logo.svg" alt="TELUS" />
         <div className="topbar-right">
           {envs.length > 1 && (
-            <div className="env-switch" role="group" aria-label="Environment">
-              <span className="env-label">Environment:</span>
-              <div className="chips">
-                {envs.map((e) => (
-                  <button
-                    type="button"
-                    key={e.id}
-                    className={`chip ${activeEnv?.id === e.id ? 'active' : ''}`}
-                    title={e.project}
-                    onClick={() => setEnv(e.id)}
-                  >
-                    {e.label}
-                  </button>
-                ))}
-              </div>
+            // An on/off switch like the one in Settings: off searches NP, on searches PR, and the word beside it says which.
+            <div className="env-switch toggle" title={activeEnv?.project}>
+              <label htmlFor="env-toggle" className="env-label">Environment:</label>
+              <input
+                id="env-toggle"
+                type="checkbox"
+                role="switch"
+                checked={activeEnv?.id === 'pr'}
+                onChange={(e) => setEnv(e.target.checked ? 'pr' : 'np')}
+              />
+              <span className="env-value" aria-live="polite">{activeEnv?.label}</span>
             </div>
           )}
           <div className="settings" ref={settingsRef}>
@@ -606,8 +602,22 @@ export default function App() {
       <main>
       <section className="hero">
         <div>
-          <h1>Template Triggering App.</h1>
-          <p>Search communication API logs, then let FuelIX match triggering application.</p>
+          <div className="brand-hero">
+            <span className="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
+                <circle cx="12" cy="12" r="5" strokeDasharray="25.4 6" transform="rotate(124.4 12 12)" />
+                <circle cx="12" cy="12" r="9" strokeDasharray="46.5 10" transform="rotate(121.9 12 12)" />
+              </svg>
+            </span>
+            <div>
+              <h1 className="brand-name">
+                Trigger<span>Trace</span>
+                <em>Bot</em>
+              </h1>
+              <p className="brand-sub">Find which application triggered a template</p>
+            </div>
+          </div>
         </div>
         <img className="hero-logo" src="/logo_cub.png" alt="Logo" />
       </section>
@@ -668,13 +678,12 @@ export default function App() {
         {(busy || understood) && (
           <p className="chat-status" role="status">
             {busy ? (
-              <span className="finding">
-                {interpreting ? 'Reading your request' : analyzing ? 'Finding the triggering application' : 'Searching the logs'}
-                <span className="dots" aria-hidden="true">
-                  <i>.</i>
-                  <i>.</i>
-                  <i>.</i>
+              // One big pulsing purple dot while working; the words are kept for screen readers only.
+              <span className="thinking">
+                <span className="sr-only">
+                  {interpreting ? 'Reading your request' : analyzing ? 'Finding the triggering application' : 'Searching the logs'}
                 </span>
+                <i aria-hidden="true" />
               </span>
             ) : (
               <>
@@ -722,7 +731,11 @@ export default function App() {
       {logs && logs.length === 0 && <p className="no-results">No Search Result Found</p>}
       {logs && logs.length > 0 && (
         <p className="count">
-          Showing {logs.length} logs, newest first
+          Showing {logs.length} unique log{logs.length === 1 ? '' : 's'}, newest first
+          {(() => {
+            const hidden = logs.reduce((n, l) => n + Math.max((l.repeats ?? 1) - 1, 0), 0);
+            return hidden > 0 ? ` · ${hidden} repeated record${hidden === 1 ? '' : 's'} hidden` : '';
+          })()}
           {stats?.range?.[0] && stats?.range?.[1]
             ? ` (searched ${fmtDateTime(stats.range[0])} → ${fmtDateTime(stats.range[1])})`
             : ` (${logs[logs.length - 1].timestamp} → ${logs[0].timestamp})`}
@@ -735,6 +748,11 @@ export default function App() {
             <header>
               <span className={`sev ${log.severity}`}>{log.severity || 'DEFAULT'}</span>
               <time>{log.timestamp}</time>
+              {log.repeats > 1 && (
+                <span className="repeats" title="Same template and X-Consumer-Username; only the newest is shown">
+                  seen {log.repeats}&times;
+                </span>
+              )}
             </header>
             <LogView message={log.message} match={values?.[i]} keys={config.searchKeys} />
           </div>
@@ -754,26 +772,11 @@ export default function App() {
                   'Triggering application not determined.'
                 )}
               </p>
-            ) : values[i] ? (
-              <div className="app-details">
-                <p>The triggering application details for this template are as:</p>
-                <dl>
-                  <div>
-                    <dt>{config.labels[values[i].key] ?? values[i].key}</dt>
-                    <dd>{values[i].value}</dd>
-                  </div>
-                  <div>
-                    <dt>Team</dt>
-                    <dd className={teams?.[i] ? '' : 'muted'}>{teams?.[i] ?? 'Not found in CMDBID.xlsx'}</dd>
-                  </div>
-                </dl>
-              </div>
-            ) : (
-              <p className="hint no-key">Not able to find the App name, please try again with different Key</p>
-            )}
+            ) : null}
+            <h3 className="trace-title">Triggering Application</h3>
             <table className="trace-table">
               <tbody>
-                {findHeaderValues(log.message, TRACE_HEADERS).map(({ name, value }) => (
+                {[...findHeaderValues(log.message, TRACE_HEADERS), { name: 'Sender', value: findSenderName(log.message) }].map(({ name, value }) => (
                   <tr key={name}>
                     <th scope="row">{name}</th>
                     <td className={value ? '' : 'muted'}>{value ?? '—'}</td>

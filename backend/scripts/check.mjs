@@ -62,6 +62,19 @@ try {
     ['a line holding both the short and the long name matches', containsWholeTerm('BYOD_ORDER_CONF_KOODO_CSAG then BYOD_ORDER_CONF_KOODO.', 'BYOD_ORDER_CONF_KOODO')],
     ['regex characters in the term are literal', !containsWholeTerm('aXb', 'a.b') && containsWholeTerm('see a.b now', 'a.b')],
   );
+  const { recordKey, uniqueRecords } = await import('../src/dedupe.js');
+  const reqLog = (consumer, template) => `request [{X-Consumer-Username=${consumer}, X-Kong-Request-Id=${Math.random()}},{"templateName":"${template}","language":"EN"}]`;
+  const escapedLog = (consumer, template) => `request [{X-Consumer-Username=${consumer}},{"characteristic":[{"value":"{\\"templateName\\":\\"${template}\\"}"}]}]`;
+  const run = (messages) => { const u = uniqueRecords(); return messages.map((message) => { const r = { message }; return [u.add(r), r]; }); };
+  const first = run([reqLog('ECP', 'FFH_SelfLinkConf'), reqLog('ECP', 'FFH_SelfLinkConf'), reqLog('ECP', 'FFH_SelfLinkConf')]);
+  cases.push(
+    ['dedupe: the same template and caller are one record', first.filter(([kept]) => kept).length === 1 && first[0][1].repeats === 3],
+    ['dedupe: the same template from another caller is kept', run([reqLog('ECP', 'T1'), reqLog('MyTelus', 'T1')]).every(([kept]) => kept)],
+    ['dedupe: another template from the same caller is kept', run([reqLog('ECP', 'T1'), reqLog('ECP', 'T2')]).every(([kept]) => kept)],
+    ['dedupe: a template inside an escaped JSON string is read', recordKey(escapedLog('ECP', 'FFH_SelfLinkConf')) === 'ffh_selflinkconf|ecp'],
+    ['dedupe: a record naming neither is never collapsed', run(['Cached dummy config', 'Cached dummy config']).every(([kept]) => kept)],
+    ['dedupe: the newest (first seen) record is the one kept', (() => { const u = uniqueRecords(); const a = { message: reqLog('ECP', 'T1'), id: 'new' }; const b = { message: reqLog('ECP', 'T1'), id: 'old' }; return u.add(a) && !u.add(b) && a.repeats === 2; })()],
+  );
   const { parseTimeRange, withoutSearch } = await import('../src/timeRange.js');
   const range = (text) => JSON.stringify(parseTimeRange(text));
   const timeCases = [

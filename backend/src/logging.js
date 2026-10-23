@@ -1,5 +1,6 @@
 import { Logging } from '@google-cloud/logging';
 import { getConfig } from './githubConfig.js';
+import { uniqueRecords } from './dedupe.js';
 
 // The environments a request may read, each with its own project (GCP_PROJECT_NP / GCP_PROJECT_PR). This API has no
 // sign-in, so it never reads a project that is not listed here. With neither set, GCP_PROJECT_ID is the only one.
@@ -157,6 +158,9 @@ const MAX_PAGES = 10; // a sparse search can return short pages, so keep asking 
 async function listEntries(envId, projectId, filter, wanted, { showAll = false, term = null } = {}) {
   const client = await clientFor(envId).auth.getClient();
   const results = [];
+  // Newest first, so the first record of each kind is the newest; later identical ones are only counted (see dedupe.js).
+  // A lookup of one entry by its insertId is never collapsed.
+  const unique = uniqueRecords();
   let pageToken;
   for (let page = 0; page < MAX_PAGES && results.length < wanted; page += 1) {
     const res = await client.request({
@@ -164,11 +168,12 @@ async function listEntries(envId, projectId, filter, wanted, { showAll = false, 
       method: 'POST',
       data: { resourceNames: [`projects/${projectId}`], filter, orderBy: 'timestamp desc', pageSize: wanted, ...(pageToken && { pageToken }) },
     });
-    results.push(
-      ...(res.data.entries ?? [])
-        .map(toResult)
-        .filter((r) => (showAll || isShownLog(r.message)) && (!term || containsWholeTerm(r.message, term))),
-    );
+    for (const entry of res.data.entries ?? []) {
+      const r = toResult(entry);
+      if (!showAll && !isShownLog(r.message)) continue;
+      if (term && !containsWholeTerm(r.message, term)) continue;
+      if (showAll || unique.add(r)) results.push(r);
+    }
     pageToken = res.data.nextPageToken;
     if (!pageToken) break;
   }

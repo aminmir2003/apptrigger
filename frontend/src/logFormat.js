@@ -118,6 +118,16 @@ export function findHeaderValues(text, names) {
   });
 }
 
+/**
+ * The sender's name from a request body: "sender": { "@type": "TelusSender", "name": "Netcracker-Order-Handler" }.
+ * Works on plain JSON and on JSON escaped inside a string (\"sender\":{\"name\":\"...\"}). Null when there is none.
+ */
+export function findSenderName(text) {
+  // The sender object has no nested braces, so [^{}] keeps the search inside it.
+  const m = /(?<![A-Za-z0-9_])sender[\\"']*\s*:\s*\{[^{}]*?[\\"']name[\\"']*\s*:\s*[\\"']*([\w.@+-]+)/i.exec(text);
+  return m ? m[1] : null;
+}
+
 // Show only the shape of a bearer token, never the token itself.
 export const maskHeaderValue = (name, value) =>
   /^authorization$/i.test(name) ? value.replace(/(Bearer\s+)\S+/i, '$1••••••••') : value;
