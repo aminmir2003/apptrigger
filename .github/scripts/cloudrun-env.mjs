@@ -17,8 +17,15 @@ if (!out) {
 const SETTINGS = [
   ['NODE_ENV', null, 'production'],
 
-  // Google Cloud Logging project the logs are read from
+  // Google Cloud Logging project the logs are read from (single project; used when NP / PR below are not set)
   ['GCP_PROJECT_ID', 'APP_LOGS_PROJECT_ID'],
+
+  // NP / PR switch in the page: the project behind each side, and the service account key (the whole JSON key file)
+  // the backend signs in with to read it. Each side has its own service account.
+  ['GCP_PROJECT_NP', 'APP_LOGS_PROJECT_NP'],
+  ['GCP_PROJECT_PR', 'APP_LOGS_PROJECT_PR'],
+  ['GCP_SA_KEY_NP', 'APP_LOGS_SA_KEY_NP'],
+  ['GCP_SA_KEY_PR', 'APP_LOGS_SA_KEY_PR'],
 
   // FuelIX
   ['FUELIX_API_KEY', 'APP_FUELIX_API_KEY'],

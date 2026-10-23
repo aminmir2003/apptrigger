@@ -14,13 +14,42 @@ if (!Object.keys(projects).length) {
 export const environments = Object.entries(projects).map(([id, project]) => ({ id, label: ENV_LABELS[id] ?? id, project }));
 const defaultEnv = projects[process.env.DEFAULT_ENV?.toLowerCase()] ? process.env.DEFAULT_ENV.toLowerCase() : environments[0].id;
 
-// One client per environment. Its key comes from GOOGLE_APPLICATION_CREDENTIALS_NP / _PR when set, otherwise the
-// shared GOOGLE_APPLICATION_CREDENTIALS (ADC).
+/**
+ * The service account key given as text (the whole JSON key file). Throws a short reason, never the key itself.
+ * @param {string} text
+ */
+export function parseServiceAccountKey(text) {
+  let key;
+  try {
+    key = JSON.parse(text);
+  } catch {
+    throw new Error('is not valid JSON (paste the whole key file, starting with "{")');
+  }
+  if (key?.type !== 'service_account' || !key.client_email || !key.private_key) {
+    throw new Error('is not a service account key (it needs type, client_email and private_key)');
+  }
+  return key;
+}
+
+// One client per environment, signed in as that environment's own service account. The key comes from, in order:
+//   GCP_SA_KEY_NP / GCP_SA_KEY_PR                         the key file's content as text (Cloud Run, GitHub secret)
+//   GOOGLE_APPLICATION_CREDENTIALS_NP / _PR               the path of a key file (your own machine)
+//   GOOGLE_APPLICATION_CREDENTIALS / the platform account  shared by both (ADC)
 const clients = new Map();
 function clientFor(env) {
   if (!clients.has(env)) {
-    const keyFilename = process.env[`GOOGLE_APPLICATION_CREDENTIALS_${env.toUpperCase()}`]?.trim() || undefined;
-    clients.set(env, new Logging({ projectId: projects[env], keyFilename }));
+    const suffix = env.toUpperCase();
+    const keyText = process.env[`GCP_SA_KEY_${suffix}`]?.trim();
+    let credentials;
+    if (keyText) {
+      try {
+        credentials = parseServiceAccountKey(keyText);
+      } catch (err) {
+        throw new Error(`GCP_SA_KEY_${suffix} ${err.message}`);
+      }
+    }
+    const keyFilename = credentials ? undefined : process.env[`GOOGLE_APPLICATION_CREDENTIALS_${suffix}`]?.trim() || undefined;
+    clients.set(env, new Logging({ projectId: projects[env], credentials, keyFilename }));
   }
   return clients.get(env);
 }

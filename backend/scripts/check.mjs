@@ -46,7 +46,14 @@ try {
   ];
   // logging.js insists on a project being configured when it loads; the check never contacts Google.
   process.env.GCP_PROJECT_NP ??= 'check-project';
-  const { containsWholeTerm } = await import('../src/logging.js');
+  const { containsWholeTerm, parseServiceAccountKey } = await import('../src/logging.js');
+  const reason = (text) => { try { parseServiceAccountKey(text); return null; } catch (err) { return err.message; } };
+  cases.push(
+    ['service account key text is accepted', reason('{"type":"service_account","client_email":"a@b.iam.gserviceaccount.com","private_key":"x"}') === null],
+    ['a key file missing its opening brace is refused', /not valid JSON/.test(reason('"type": "service_account"}'))],
+    ['JSON that is not a service account key is refused', /not a service account key/.test(reason('{"type":"authorized_user"}'))],
+    ['the refusal never repeats the key', !String(reason('{"type":"authorized_user","private_key":"SECRET123"}')).includes('SECRET123')],
+  );
   cases.push(
     ['whole name matches on its own', containsWholeTerm('"templateName": "BYOD_ORDER_CONF_KOODO",', 'BYOD_ORDER_CONF_KOODO')],
     ['a longer name with a suffix does not match', !containsWholeTerm('for template BYOD_ORDER_CONF_KOODO_CSAG with TTL', 'BYOD_ORDER_CONF_KOODO')],
