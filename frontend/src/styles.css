@@ -13,7 +13,7 @@
 
 * { box-sizing: border-box; }
 body { overflow-x: hidden; margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif; background: #fff; color: var(--text); }
-main { max-width: none; margin: 0; padding: 8px 60px 48px; }
+main { max-width: none; margin: 0; padding: 8px 100px 48px; }
 
 /* Top bar */
 .topbar { display: flex; align-items: center; gap: 16px; padding: 0 24px; min-height: 56px; border-bottom: 1px solid var(--line); border-top: 4px solid var(--purple); }
@@ -21,10 +21,10 @@ main { max-width: none; margin: 0; padding: 8px 60px 48px; }
 
 /* Hero */
 /* Breaks out of the centred content column so text sits at the far left and the logo at the far right. */
-.hero { position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 24px; width: 100vw; margin-left: calc(50% - 50vw); padding: 12px 24px; margin-bottom: 16px; box-sizing: border-box; }
+/* The title sits on the same left edge as the answer below it, and the picture on the same right edge (both use the page margin). */
+.hero { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 24px; width: 100vw; margin-left: calc(50% - 50vw); padding: 12px 100px; margin-bottom: 16px; box-sizing: border-box; }
 /* Divider line that spans the full window width while the content stays centred. */
 .hero::after { content: ""; position: absolute; bottom: 0; left: 0; width: 100%; border-bottom: 1px solid var(--line); }
-.hero > div:first-child { padding-left: 60px; }
 /* The TriggerTrace Bot title: a green icon tile, the name (Trace in green), a "Bot" tag and a purple subtitle. */
 .brand-hero { display: flex; align-items: center; gap: 16px; }
 .brand-mark { flex: none; display: flex; width: 64px; height: 64px; }
@@ -119,11 +119,11 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size
 @media (max-width: 640px) {
   main { padding: 8px 30px 32px; }
   .hero h1 { font-size: 32px; }
-  .hero { grid-template-columns: 1fr; row-gap: 12px; }
+  .hero { grid-template-columns: 1fr; row-gap: 12px; padding: 12px 30px; }
   .topbar-note { display: none; }
   .keys { min-width: 0; width: 100%; }
 }
-.hero-logo { height: 130px; width: auto; mix-blend-mode: multiply; filter: brightness(1.05); margin: 0; justify-self: center; position: relative; left: 390px; }
+.hero-logo { height: 130px; width: auto; mix-blend-mode: multiply; filter: brightness(1.05); margin: 0; justify-self: end; }
 .topbar-logo { height: 44px; width: auto; }
 @media (max-width: 640px) {
   .log-card { grid-template-columns: 1fr; }
@@ -149,8 +149,7 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size
 .gear:focus-visible { outline: 3px solid rgba(75, 40, 109, 0.4); outline-offset: 2px; }
 
 /* With the subtitle on one line the logo has less room: drop its right shift on smaller windows. */
-@media (max-width: 1200px) { .hero-logo { left: 0; } }
-@media (max-width: 640px) { .hero p { white-space: normal; } }
+@media (max-width: 640px) { .hero p { white-space: normal; } .hero-logo { justify-self: center; } }
 
 /* Settings drawer (TELUS theme) */
 .drawer-backdrop { position: fixed; inset: 0; z-index: 20; background: rgba(43, 13, 62, 0.45); }
