@@ -1,5 +1,5 @@
 // Configuration kept outside the code: the keys to search for in logs, and the display labels for
-// them. (The key -> team rows stay in CMDBID.xlsx, see cmdb.js.)
+// them.
 //
 // Where it comes from:
 //   - GITHUB_REPO set    -> a JSON file in that GitHub repository, cached for a few minutes, so editing it

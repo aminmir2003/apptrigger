@@ -75,6 +75,33 @@ try {
     ['dedupe: a record naming neither is never collapsed', run(['Cached dummy config', 'Cached dummy config']).every(([kept]) => kept)],
     ['dedupe: the newest (first seen) record is the one kept', (() => { const u = uniqueRecords(); const a = { message: reqLog('ECP', 'T1'), id: 'new' }; const b = { message: reqLog('ECP', 'T1'), id: 'old' }; return u.add(a) && !u.add(b) && a.repeats === 2; })()],
   );
+  const { parseJsonArray } = await import('../src/fuelix.js');
+  const answer = '[{"index": 0, "matches": [{"key": "X-Consumer-Username", "value": "PaymentManagement"}]}]';
+  const parses = (text) => { try { return parseJsonArray(text); } catch { return null; } };
+  cases.push(
+    ['reply: a clean array is read', parses(answer)?.[0]?.matches?.[0]?.value === 'PaymentManagement'],
+    ['reply: a correct answer followed by more talking is read (the reported failure)', parses(`${answer}\n\n\nWait, let me re-examine the log more carefully. I need to search for the specific keys in priority order: "C`)?.[0]?.matches?.[0]?.value === 'PaymentManagement'],
+    ['reply: more talking that contains brackets does not break it', parses(`${answer}\nNote [1]: also {see} the keys ["a"`)?.[0]?.index === 0],
+    ['reply: prose before the answer is skipped', parses(`Here you go: ${answer}`)?.[0]?.index === 0],
+    ['reply: a code fence is removed', parses('```json\n' + answer + '\n```')?.[0]?.index === 0],
+    ['reply: brackets inside a value do not confuse it', parses('[{"index":0,"matches":[{"key":"k","value":"a]b}c"}]}]')?.[0]?.matches?.[0]?.value === 'a]b}c'],
+    ['reply: an object holding the array is unwrapped', parses('{"results": [{"index": 1}]}')?.[0]?.index === 1],
+    ['reply: a single object becomes a one-item list', parses('{"value": "101892"}')?.[0]?.value === '101892'],
+    ['reply: text with no JSON is refused', parses('I could not find anything') === null],
+    ['reply: a broken first array falls through to the next good one', parses('[{"a": 1 , nope] then [{"index": 2}]')?.[0]?.index === 2],
+  );
+  const { rankCandidates, bestByRanking, validatePick } = await import('../src/deepAnalysis.js');
+  const logsFor = (n, consumer, extra = '') => Array.from({ length: n }, () => `request [{X-Consumer-Username=${consumer}${extra}},{"templateName":"TELUS_WELCOME","sender":{"name":"appName"}}]`);
+  const ranked = rankCandidates([...logsFor(6, 'MyTelus'), ...logsFor(2, 'Koodo'), ...logsFor(1, 'MyTelus', ', appId=ABC123')]);
+  cases.push(
+    ['deep: the most frequent caller of the best field comes first', ranked[0].field === 'X-Consumer-Username' && ranked[0].value === 'MyTelus' && ranked[0].count === 7],
+    ['deep: a placeholder sender (appName) is ignored', !ranked.some((c) => c.field === 'Sender')],
+    ['deep: a less telling field is listed after a more telling one', ranked.findIndex((c) => c.field === 'appId') > ranked.findIndex((c) => c.field === 'X-Consumer-Username')],
+    ['deep: the ranking alone gives a confidence from how often it appears', bestByRanking(ranked, 9).confidence === 'high' && bestByRanking(ranked, 40).confidence === 'low'],
+    ['deep: nothing found gives no answer', rankCandidates(['plain log line']).length === 0 && bestByRanking([], 3) === null],
+    ['deep: the model must name a candidate', validatePick({ name: 'MyTelus', confidence: 'HIGH', reason: 'most calls' }, ranked)?.confidence === 'high' && validatePick({ name: 'Invented' }, ranked) === null],
+    ['deep: a sender that is a real name is a candidate', rankCandidates(['"sender": {"@type":"TelusSender","name":"Order-Handler"}'])[0]?.value === 'Order-Handler'],
+  );
   const { parseTimeRange, withoutSearch } = await import('../src/timeRange.js');
   const range = (text) => JSON.stringify(parseTimeRange(text));
   const timeCases = [

@@ -77,12 +77,13 @@ const fullMessage = (data) => {
  * @param {string} [o.severity] minimum severity, e.g. ERROR
  * @param {string} [o.search] text to find in the log entries
  * @param {string} [o.filter] extra Logging query language filter
+ * @param {boolean} [o.raw] return every matching entry of any kind, uncollapsed (used to study a template's other logs)
  * @param {string} [o.from] range start (ISO date); overrides hours
  * @param {string} [o.to] range end (ISO date)
  * @param {number} [o.hours=1] lookback window used when from is not given
  * @param {number} [o.limit=50]
  */
-export async function queryLogs({ env, resource = 'cloud_run_revision', service, revision, severity, filter, search, insertId, from, to, hours = 1, limit = 50 } = {}) {
+export async function queryLogs({ env, resource = 'cloud_run_revision', service, revision, severity, filter, search, insertId, raw, from, to, hours = 1, limit = 50 } = {}) {
   const envId = String(env || defaultEnv).toLowerCase();
   const projectId = Object.hasOwn(projects, envId) ? projects[envId] : null;
   if (!projectId) throw new Error(`Environment "${q(envId)}" is not configured. Available: ${environments.map((e) => e.id).join(', ')}.`);
@@ -101,7 +102,7 @@ export async function queryLogs({ env, resource = 'cloud_run_revision', service,
   console.log(`Cloud Logging query (project ${projectId}${profile ? ', ready-made query from the config' : ''}):\n  ${parts.join('\n  AND ')}`);
 
   const wanted = Math.min(Number(limit) || 50, 500);
-  return listEntries(envId, projectId, parts.join(' AND '), wanted, { showAll: Boolean(insertId), term: insertId ? null : search });
+  return listEntries(envId, projectId, parts.join(' AND '), wanted, { showAll: Boolean(insertId) || Boolean(raw), term: insertId ? null : search });
 }
 
 // What a Cloud Logging insertId looks like, and the only characters accepted for one.

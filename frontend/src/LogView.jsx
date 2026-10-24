@@ -1,28 +1,54 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { findIdentifiers, parseLog } from './logFormat.js';
+import { Caret, Typed, useTypewriter } from './typewriter.jsx';
 
 // Colours JSON tokens: keys, strings, numbers and true/false/null each get their own class.
 const TOKEN = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
 
-function JsonView({ data }) {
+// The JSON as indented text, cut into coloured pieces: [{ text, cls? }].
+function jsonPieces(data) {
   const text = JSON.stringify(data, null, 2);
-  const parts = [];
+  const pieces = [];
   let last = 0;
   let m;
   while ((m = TOKEN.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
+    if (m.index > last) pieces.push({ text: text.slice(last, m.index) });
     const [full, str, colon, literal] = m;
-    const cls = str ? (colon ? 'j-key' : 'j-str') : literal ? 'j-lit' : 'j-num';
-    parts.push(
-      <span key={m.index} className={cls}>
-        {str && colon ? str : full}
-      </span>,
-    );
-    if (str && colon) parts.push(colon);
+    pieces.push({ text: str && colon ? str : full, cls: str ? (colon ? 'j-key' : 'j-str') : literal ? 'j-lit' : 'j-num' });
+    if (str && colon) pieces.push({ text: colon });
     last = m.index + full.length;
   }
-  parts.push(text.slice(last));
-  return <pre className="json">{parts}</pre>;
+  pieces.push({ text: text.slice(last) });
+  return { text, pieces };
+}
+
+// With animate on, the JSON is typed out; only as many characters as have been typed so far are drawn.
+function JsonView({ data, animate = false }) {
+  const { text, pieces } = useMemo(() => jsonPieces(data), [data]);
+  const shown = useTypewriter(text.length, animate, { seconds: 2.5 });
+  let left = shown;
+  const parts = [];
+  for (let i = 0; i < pieces.length && left > 0; i += 1) {
+    const t = pieces[i].text.slice(0, left);
+    left -= t.length;
+    parts.push(pieces[i].cls ? <span key={i} className={pieces[i].cls}>{t}</span> : t);
+  }
+  return (
+    <pre className="json">
+      {parts}
+      {shown < text.length && <Caret />}
+    </pre>
+  );
+}
+
+// Plain log text, typed out like the JSON when animate is on.
+function PlainText({ text, animate = false }) {
+  const shown = useTypewriter(text.length, animate, { seconds: 2.5 });
+  return (
+    <pre className="plain">
+      <Typed text={text} shown={shown} />
+    </pre>
+  );
 }
 
 // Copies text to the clipboard. navigator.clipboard needs a secure page, so fall back to a hidden textarea.
@@ -102,9 +128,10 @@ function Identifiers({ ids, match }) {
  * Shows a log message, whether it was pasted or fetched from Cloud Logging.
  * Request logs show their indented JSON body only; structured (JSON) entries
  * are indented and coloured; anything else is shown as plain text.
- * @param {{ message: string, match?: {key: string, value: string}|null, keys: string[] }} props
+ * With animate on, the main text is typed out as it appears.
+ * @param {{ message: string, match?: {key: string, value: string}|null, keys: string[], animate?: boolean }} props
  */
-export default function LogView({ message, match, keys }) {
+export default function LogView({ message, match, keys, animate = false }) {
   const parsed = useMemo(() => parseLog(message), [message]);
   const ids = useMemo(() => findIdentifiers(message, keys), [message, keys]);
 
@@ -117,7 +144,7 @@ export default function LogView({ message, match, keys }) {
             Log message
             <CopyButton label="Copy log message" getText={() => message} />
           </summary>
-          <pre className="plain">{message}</pre>
+          <PlainText text={message} animate={animate} />
         </details>
       </div>
     );
@@ -132,7 +159,7 @@ export default function LogView({ message, match, keys }) {
             Log entry
             <CopyButton label="Copy log entry" getText={() => JSON.stringify(parsed.data, null, 2)} />
           </summary>
-          <JsonView data={parsed.data} />
+          <JsonView data={parsed.data} animate={animate} />
         </details>
       </div>
     );
@@ -149,7 +176,7 @@ export default function LogView({ message, match, keys }) {
             Request body
             <CopyButton label="Copy request body" getText={() => (body === null ? rawBody : JSON.stringify(body, null, 2))} />
           </summary>
-          {body === null ? <pre>{rawBody}</pre> : <JsonView data={body} />}
+          {body === null ? <PlainText text={rawBody} animate={animate} /> : <JsonView data={body} animate={animate} />}
         </details>
       )}
 

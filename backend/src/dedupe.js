@@ -3,6 +3,7 @@
 
 // "key": value, key=value, or the escaped form inside a JSON string (\"key\":\"value\"). A ";" or "-" before the name
 // means it is part of a longer name (for example "X-dynaTrace-Application=v=2;appId=...").
+export const fieldValue = (text, name) => valueOf(text, name);
 const valueOf = (text, name) => {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?<![A-Za-z0-9_;-])${escaped}[\\\\"']*\\s*[:=]\\s*[\\\\"']*([\\w.@+-]+)`, 'i').exec(text)?.[1] ?? null;

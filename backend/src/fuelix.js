@@ -44,29 +44,44 @@ async function chat(messages) {
   return content;
 }
 
+// The first complete JSON array or object in the text, or undefined. Everything after it is ignored, so a model that
+// keeps talking after a correct answer ("Wait, let me re-examine…") does not break it. Brackets inside strings are
+// skipped, and a start that never closes properly is passed over for the next one.
+function firstJsonValue(text) {
+  for (let start = 0; start < text.length; start += 1) {
+    if (text[start] !== '[' && text[start] !== '{') continue;
+    const closers = [];
+    let inString = false;
+    for (let i = start; i < text.length; i += 1) {
+      const c = text[i];
+      if (inString) {
+        if (c === '\\') i += 1;
+        else if (c === '"') inString = false;
+      } else if (c === '"') {
+        inString = true;
+      } else if (c === '[' || c === '{') {
+        closers.push(c === '[' ? ']' : '}');
+      } else if (c === ']' || c === '}') {
+        if (closers.pop() !== c) break;
+        if (closers.length === 0) {
+          try {
+            return JSON.parse(text.slice(start, i + 1));
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
 // Models sometimes wrap JSON in code fences or prose despite instructions, or return an object
 // ({"results": [...]}) or a single item instead of a bare array.
-const parseJsonArray = (content) => {
+export const parseJsonArray = (content) => {
   const cleaned = content.replace(/```(?:json)?/g, '').trim();
-  const fail = () => new Error(`FuelIX reply was not usable JSON: ${JSON.stringify(cleaned.slice(0, 200))}`);
-
-  const arrayStart = cleaned.indexOf('[');
-  const objectStart = cleaned.indexOf('{');
-  // Prefer a top-level array; fall back to an object if it comes first or there is no array.
-  const useArray = arrayStart !== -1 && (objectStart === -1 || arrayStart < objectStart);
-  const text = useArray
-    ? cleaned.slice(arrayStart, cleaned.lastIndexOf(']') + 1)
-    : objectStart !== -1
-      ? cleaned.slice(objectStart, cleaned.lastIndexOf('}') + 1)
-      : '';
-  if (!text) throw fail();
-
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw fail();
-  }
+  const parsed = firstJsonValue(cleaned);
+  if (parsed === undefined) throw new Error(`FuelIX reply was not usable JSON: ${JSON.stringify(cleaned.slice(0, 200))}`);
   if (Array.isArray(parsed)) return parsed;
   // {"results": [...]} or any single property holding an array
   const nested = Object.values(parsed ?? {}).find(Array.isArray);
@@ -82,6 +97,33 @@ Reply with ONLY a JSON object, no prose and no code fences, in the form:
 {"search": "NOTIFY_DATA_ROLLOVER_KOODO", "environment": null}
 - "search": the template name or identifier to look for in the logs, copied EXACTLY as the user typed it (letters, digits and _ . - : / only). Use null if the request contains none. Never invent one. Do not include any date or time words in it.
 - "environment": "np" if the user says NP or non-production, "pr" if the user says PR or production, otherwise null.`;
+
+const pickApplicationPrompt = `You help find which application triggers a communication template.
+You get the template name and a list of candidates. Each candidate is a value found in logs that mention the template: the field it was found in, the value, and in how many logs it appeared.
+Choose the single most likely triggering application. Prefer a value that appears in most of the logs; X-Consumer-Username and originatorApplicationId are more telling than appId or Sender. You may use the template name as a hint to break a tie.
+You MUST answer with one of the candidate values, copied exactly, or null if none is believable. Never invent a name.
+Reply with ONLY a JSON object: {"name": "<candidate value or null>", "confidence": "high|medium|low", "reason": "one short sentence"}`;
+
+/**
+ * Ask the model which candidate most likely triggers the template. Returns the raw reply, or null when the model
+ * is unavailable or the reply cannot be read (the caller then falls back to the plain ranking).
+ * @param {string} template
+ * @param {{field: string, value: string, count: number}[]} candidates
+ * @param {number} examined how many logs the counts come from
+ */
+export async function askWhichApplication(template, candidates, examined) {
+  try {
+    const list = candidates.slice(0, 10).map((c) => `- ${c.field}: ${c.value} (in ${c.count} of ${examined} logs)`).join('\n');
+    const content = await chat([
+      { role: 'system', content: pickApplicationPrompt },
+      { role: 'user', content: `Template: ${template}\nCandidates:\n${list}` },
+    ]);
+    return parseJsonArray(content)[0] ?? null;
+  } catch (err) {
+    console.warn(`FuelIX could not pick the application, using the plain ranking: ${err.message}`);
+    return null;
+  }
+}
 
 // A token that looks like a template name or identifier: letters, digits and _ . - : /
 const SEARCH_TOKEN = /[A-Za-z0-9][A-Za-z0-9_.:/-]*/g;

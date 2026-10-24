@@ -3,7 +3,7 @@ import { setupCors } from './cors.js';
 import { login as portalLogin, status as portalStatus, logout as portalLogout } from './portalSession.js';
 import { queryLogs, environments } from './logging.js';
 import { extractIds, interpretPrompt } from './fuelix.js';
-import { pickTeams, cmdbRowCount } from './cmdb.js';
+import { deepAnalyze } from './deepAnalysis.js';
 import { getConfig, configSource, chooseKeys } from './githubConfig.js';
 
 const app = express();
@@ -42,18 +42,26 @@ app.post('/interpret', async (req, res) => {
   }
 });
 
-// GET /info -> non-secret facts shown in the page's "Cloud logs" details card.
-app.get('/info', async (_req, res) => {
-  let cmdbRows = null;
+// POST /deep-analyze { env, template, from? }
+//   -> { template, examined, candidates, name, field, count, confidence, reason, by }
+// For a template whose own request names no caller: studies the other logs that mention it and says which application
+// most likely triggers it (name is null when there is nothing to go on).
+app.post('/deep-analyze', async (req, res) => {
   try {
-    cmdbRows = await cmdbRowCount();
-  } catch {
-    // a missing or unreadable sheet is reported as unknown, not as an error
+    const { env, template, from } = req.body ?? {};
+    if (typeof template !== 'string' || !template.trim()) return res.status(400).json({ error: 'template must be a non-empty string' });
+    res.json(await deepAnalyze({ env, template: template.trim(), from }));
+  } catch (err) {
+    console.error(err);
+    res.status(err.message === 'Invalid template name' ? 400 : 500).json({ error: err.message });
   }
+});
+
+// GET /info -> non-secret facts shown in the page's "Cloud logs" details card.
+app.get('/info', (_req, res) => {
   res.json({
     environments,
     fuelixModel: process.env.FUELIX_MODEL || null,
-    cmdbRows,
   });
 });
 
@@ -69,10 +77,9 @@ app.get('/config', async (_req, res) => {
 });
 
 // POST /analyze { messages: string[], keys?: string[] }
-//   -> { ids: ({key, value}|null)[], teams: (string|null)[] }
+//   -> { ids: ({key, value}|null)[] }
 // Uses FuelIX to find every configured search key (the list lives in GitHub) in each log.
-// The value found next to the key (for example "X-Consumer-Username: PaymentManagement") is the consumer;
-// its Description in CMDBID.xlsx is the team.
+// The value found next to the key (for example "X-Consumer-Username: PaymentManagement") is the consumer.
 app.post('/analyze', async (req, res) => {
   try {
     const { messages, keys } = req.body ?? {};
@@ -86,9 +93,9 @@ app.post('/analyze', async (req, res) => {
     } catch (err) {
       return res.status(400).json({ error: err.message });
     }
-    // Every key found in a log is tried in priority order; the first one the sheet knows wins.
-    const picked = await pickTeams(await extractIds(messages, searchKeys));
-    res.json({ ids: picked.map((p) => p.id), teams: picked.map((p) => p.team) });
+    // Every key found in a log comes back in priority order; the first one is the log's identifier.
+    const found = await extractIds(messages, searchKeys);
+    res.json({ ids: found.map((list) => list[0] ?? null) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

@@ -27,11 +27,12 @@ main { max-width: none; margin: 0; padding: 8px 60px 48px; }
 .hero > div:first-child { padding-left: 60px; }
 /* The TriggerTrace Bot title: a green icon tile, the name (Trace in green), a "Bot" tag and a purple subtitle. */
 .brand-hero { display: flex; align-items: center; gap: 16px; }
-.brand-mark { flex: none; display: flex; align-items: center; justify-content: center; width: 60px; height: 60px; border-radius: 50%; background: var(--green-bright); color: var(--purple-dark); }
-.hero .brand-name { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; font-size: 34px; line-height: 1.1; font-weight: 700; color: var(--purple); }
-.brand-name span { color: var(--green-bright); margin-left: -10px; }
-.brand-name em { padding: 3px 14px; border-radius: 999px; background: var(--green-bright); color: var(--purple-dark); font-size: 17px; font-style: normal; font-weight: 600; }
-.hero .brand-sub { margin: 0; font-size: 16px; color: var(--purple); }
+.brand-mark { flex: none; display: flex; width: 64px; height: 64px; }
+.brand-mark svg { display: block; }
+.hero .brand-name { display: flex; align-items: center; gap: 10px; margin: 0 0 2px; font-family: 'Poppins', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 34px; line-height: 1.15; font-weight: 600; color: var(--purple); }
+.brand-name span { color: var(--green); margin-left: -10px; }
+.brand-name em { padding: 2px 14px; border-radius: 999px; background: var(--green-bright); color: #1c4600; font-size: 18px; font-style: normal; font-weight: 500; }
+.hero .brand-sub { margin: 0; font-family: 'Nunito', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 18px; color: var(--muted); }
 .hero h1 { margin: 0 0 6px; font-size: 38px; line-height: 1.1; font-weight: 700; color: var(--purple); }
 .hero p { margin: 0; font-size: 16px; color: var(--muted); white-space: nowrap; }
 
@@ -72,6 +73,18 @@ button { font: inherit; font-size: 15px; cursor: pointer; }
 .suggestion:focus-visible { outline: 3px solid rgba(75, 40, 109, 0.4); outline-offset: 2px; }
 .chat-status { margin: 0; padding: 0 6px; font-size: 14px; color: var(--muted); text-align: center; }
 .chat-status strong { color: var(--purple); }
+/* Typewriter caret: blinks at the end of text that is still being typed. */
+.caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 1px; background: var(--purple); vertical-align: text-bottom; animation: caret-blink 0.9s steps(1) infinite; }
+@keyframes caret-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+/* Live activity: the moving dot, and beside it what is being done right now (finished steps are ticked). */
+.activity { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.activity-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 1.4; text-align: left; }
+.activity-steps li { color: var(--muted); }
+.activity-steps li.done::before { content: "✓"; display: inline-block; width: 18px; color: var(--green); font-weight: 700; }
+.activity-steps li.now { color: var(--purple); font-weight: 600; }
+.activity-steps li.now::before { content: "›"; display: inline-block; width: 18px; font-weight: 700; }
+.activity-steps li.now::after { content: "…"; }
 /* ChatGPT-style "working" indicator: one big purple dot that slowly swells and fades. */
 .thinking { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; }
 .thinking i { width: 28px; height: 28px; border-radius: 50%; background: var(--purple); animation: thinking-pulse 1.1s ease-in-out infinite; }
@@ -135,17 +148,6 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size
 .gear:hover, .gear[aria-expanded="true"] { background: var(--purple-tint); }
 .gear:focus-visible { outline: 3px solid rgba(75, 40, 109, 0.4); outline-offset: 2px; }
 
-/* Animated "finding" text: a purple shimmer across the words and three bouncing dots */
-.finding { font-weight: 600; background: linear-gradient(90deg, var(--purple) 0%, var(--green-bright) 50%, var(--purple) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer 2s linear infinite; }
-.dots i { display: inline-block; font-style: normal; font-weight: 700; animation: dot-bounce 1.2s ease-in-out infinite; }
-.dots i:nth-child(2) { animation-delay: 0.15s; }
-.dots i:nth-child(3) { animation-delay: 0.3s; }
-@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-@keyframes dot-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  .finding, .dots i { animation: none; }
-  .finding { color: var(--purple); background: none; }
-}
 /* With the subtitle on one line the logo has less room: drop its right shift on smaller windows. */
 @media (max-width: 1200px) { .hero-logo { left: 0; } }
 @media (max-width: 640px) { .hero p { white-space: normal; } }
@@ -231,6 +233,13 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size
 .trace-table tr:last-child th, .trace-table tr:last-child td { border-bottom: none; }
 .trace-table th { font-weight: 700; color: var(--purple); white-space: nowrap; }
 .trace-table td.muted { color: var(--muted); }
+.trace-table td strong { display: block; color: var(--purple); }
+/* The consumer is the main answer, so its row stands out. */
+.trace-table .key-row td { font-size: 15px; font-weight: 700; color: var(--purple); }
+.trace-table .key-row td.muted { font-weight: 400; color: var(--muted); }
+/* After the consumer, in brackets: whether it was found in the Request or the Response. */
+.trace-way { font-size: 13px; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.deep-note { display: block; margin-top: 2px; font-size: 12px; line-height: 1.4; color: var(--muted); }
 .app-details dd.muted { font-weight: 400; text-decoration: none; color: var(--muted); }
 
 /* Hover details for the "Cloud logs" note in the top bar */

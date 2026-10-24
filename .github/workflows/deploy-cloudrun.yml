@@ -43,10 +43,6 @@ permissions:
 # FuelIX
 #   FUELIX_API_KEY, FUELIX_ENDPOINT, FUELIX_MODEL
 #
-# Team sheet (kept out of git)
-#   CMDBID_XLSX_B64          The CMDBID.xlsx file, base64 encoded. On Windows PowerShell:
-#                              [Convert]::ToBase64String([IO.File]::ReadAllBytes("backend\CMDBID.xlsx")) | Set-Clipboard
-#
 # Search keys (optional). Without these the backend uses the config.example.json that is built into the image.
 #   CONFIG_GITHUB_REPO       owner/repository holding the config file.
 #   CONFIG_GITHUB_PATH       path of the file (default apptrigger-config.json).
@@ -101,11 +97,9 @@ jobs:
           FUELIX_API_KEY: ${{ secrets.FUELIX_API_KEY }}
           FUELIX_ENDPOINT: ${{ secrets.FUELIX_ENDPOINT }}
           FUELIX_MODEL: ${{ secrets.FUELIX_MODEL }}
-          CMDBID_XLSX_B64: ${{ secrets.CMDBID_XLSX_B64 }}
         run: |
           missing=""
-          for name in GCP_SA_KEY GCP_PROJECT_ID GCP_REGION AR_REPOSITORY FUELIX_API_KEY FUELIX_ENDPOINT FUELIX_MODEL \
-                      CMDBID_XLSX_B64; do
+          for name in GCP_SA_KEY GCP_PROJECT_ID GCP_REGION AR_REPOSITORY FUELIX_API_KEY FUELIX_ENDPOINT FUELIX_MODEL; do
             [ -z "${!name}" ] && missing="$missing $name"
           done
           if [ -n "$missing" ]; then
@@ -126,15 +120,6 @@ jobs:
             echo "::error::Secret(s) not in the expected format. Check for extra spaces, brackets or a line break:$bad"
             exit 1
           fi
-
-      # The team sheet is internal data, so it is not in git. It comes from a secret and goes only into the image.
-      - name: Add the team sheet (CMDBID.xlsx)
-        env:
-          CMDBID_XLSX_B64: ${{ secrets.CMDBID_XLSX_B64 }}
-        run: |
-          printf '%s' "$CMDBID_XLSX_B64" | base64 -d > backend/CMDBID.xlsx
-          [ -s backend/CMDBID.xlsx ] || { echo "::error::CMDBID_XLSX_B64 did not decode to a file"; exit 1; }
-          echo "CMDBID.xlsx written ($(wc -c < backend/CMDBID.xlsx) bytes)"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2

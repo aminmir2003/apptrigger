@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import LogView from './LogView.jsx';
 import { apiFetch } from './api.js';
-import { findHeaderValues, findSenderName } from './logFormat.js';
+import { hasCaller, templateNameOf } from './logFormat.js';
+import TraceTable from './TraceTable.jsx';
+import { TypedLine } from './typewriter.jsx';
 
 // A Cloud Logging insertId: lowercase letters and digits, both present, like "2hz8yue1s9cs". Template names are
 // upper case with underscores, so they never look like this.
@@ -14,8 +16,8 @@ const EXAMPLES = [
   'Triggering application of NOTIFY_DATA_ROLLOVER_KOODO from Jan-2026 to Oct 2026',
 ];
 
-// Request headers shown in the table beside every log.
-const TRACE_HEADERS = ['X-Consumer-Username', 'X-Consumer-ID', 'Kong-Request-ID', 'X-Kong-Request-Id', 'appId', 'originatorApplicationId'];
+// How many logs, from the top, are typed out as they appear. The rest show at once so a long list is not slow.
+const TYPED_LOGS = 3;
 
 // Format a Date for <input type="datetime-local"> (local time).
 const toLocalInput = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -138,13 +140,14 @@ export default function App() {
   const [pasted, setPasted] = useState(''); // a log pasted in by hand, used instead of searching Cloud Logging
   const settingsRef = useRef(null);
   const [logs, setLogs] = useState(null);
+  const [deep, setDeep] = useState({}); // for logs that name no caller: the likely application per template, from /deep-analyze
   const [values, setValues] = useState(null); // matched { key, value } per log, from FuelIX
-  const [teams, setTeams] = useState(null); // team (CMDBID.xlsx Description) per log
   const [config, setConfig] = useState({ searchKeys: [], labels: {}, source: null, error: '', loaded: false }); // from the server (GitHub or a local file)
   const [searchKey, setSearchKey] = useState(() => loadSetting('searchKey', null, ALL_KEYS));
   const [analyzing, setAnalyzing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [interpreting, setInterpreting] = useState(false); // FuelIX is reading the typed request
+  const [steps, setSteps] = useState([]); // what is happening right now: [{ text, done }]
   const [understood, setUnderstood] = useState(null); // what the last request was turned into: { search, time, env, by }
   const [error, setError] = useState('');
   // The server decides which environments exist (NP / PR); a saved choice it no longer offers falls back to its first one.
@@ -153,25 +156,47 @@ export default function App() {
   const envs = info?.environments ?? [];
   const activeEnv = envs.find((e) => e.id === env) ?? envs[0] ?? null;
 
+  // What is being done right now, shown beside the moving dot. Each new step ticks off the one before it.
+  const addStep = (text) => setSteps((s) => [...s.map((x) => ({ ...x, done: true })), { text, done: false }]);
+
+  // When every step is done: tick them all, add a ticked "Done", and wait 2 seconds before the answer appears.
+  const finishSteps = async () => {
+    setSteps((s) => [...s.map((x) => ({ ...x, done: true })), { text: 'Done', done: true }]);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  };
+
+  // Sending starts afresh: the previous answer, its summary line and any error leave the screen straight away.
+  const clearResults = () => {
+    setLogs(null);
+    setValues(null);
+    setDeep({});
+    setUnderstood(null);
+    setError('');
+  };
+
   async function onSubmit(e) {
     e.preventDefault();
     if (pasteEnabled && pasted.trim()) {
       const list = [{ severity: 'PASTED', timestamp: new Date().toISOString(), message: pasted.trim() }];
+      clearResults();
+      setSteps([]);
       setError('');
-      setLogs(list);
       setStats({ logs: 1, searchMs: null, at: Date.now() });
       setValues(null);
-      setTeams(null);
+      setDeep({});
       setLoading(true);
       try {
         await analyze(list);
+        await finishSteps();
+        setLogs(list); // shown once the analysis is done, like a search
       } finally {
         setLoading(false);
       }
       return;
     }
     if (!search.trim()) return;
-    setError('');
+    clearResults();
+    setSteps([{ text: 'Reading your request', done: false }]);
     setInterpreting(true);
     // FuelIX reads the typed request and says what to search for. If it can't be reached, the text is searched as typed.
     let plan;
@@ -221,7 +246,14 @@ export default function App() {
       timeLabel = today.label;
       setPreset('today');
     }
-    setUnderstood({ search: plan.search, time: timeLabel, env: envs.find((x) => x.id === envId)?.label ?? null, by: plan.by });
+    const chosen = envs.find((x) => x.id === envId);
+    setUnderstood({ search: plan.search, time: timeLabel, env: chosen?.label ?? null, by: plan.by });
+    addStep(
+      plan.by === 'exact'
+        ? `FuelIX could not be reached, so your text is searched as typed: ${plan.search}`
+        : `Understood: ${plan.search} · ${timeLabel}${chosen ? ` · ${chosen.label}` : ''}`,
+    );
+    addStep(`Searching ${chosen ? `${chosen.label} (${chosen.project})` : 'Cloud Logging'} for ${plan.search}`);
     await runSearch(plan.search, range, envId);
   }
 
@@ -246,12 +278,23 @@ export default function App() {
         throw new Error(`Log API is not reachable (HTTP ${res.status}). Is it running on port 3000? Start it with "npm start".`);
       }
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-      setLogs(body);
+      // The logs are kept back and shown together with their analysis, once every step below has finished.
       setStats({ logs: body.length, searchMs: Math.round(performance.now() - t0), at: Date.now(), range });
+      const hidden = body.reduce((n, l) => n + Math.max((l.repeats ?? 1) - 1, 0), 0);
+      addStep(
+        body.length === 0
+          ? 'No matching logs found'
+          : `Found ${body.length} unique log${body.length === 1 ? '' : 's'} in ${((performance.now() - t0) / 1000).toFixed(1)}s${hidden ? ` (${hidden} repeated hidden)` : ''}`,
+      );
       setValues(null);
-      setTeams(null);
+      setDeep({});
       // Second step of the single button: look up the triggering application for what was found.
-      if (body.length > 0) await analyze(body);
+      if (body.length > 0) {
+        await analyze(body);
+        await explainUnknown(body, term, range, envId);
+      }
+      await finishSteps();
+      setLogs(body);
     } catch (err) {
       setError(err.message);
       setLogs(null);
@@ -323,7 +366,43 @@ export default function App() {
     setPasted('');
   }
 
+  // For logs whose own request names no caller: study the other logs that mention the same template, once per
+  // template (at most 3), and keep the likely application for the Comments row. A failure just leaves the row out.
+  async function explainUnknown(list, term, range, envId) {
+    if (INSERT_ID_SHAPE.test(term)) return;
+    const templates = [...new Set(list.filter((l) => !hasCaller(l.message)).map((l) => templateNameOf(l.message) ?? term))].slice(0, 3);
+    if (templates.length === 0) return;
+    addStep(`${templates.length === 1 ? 'A log names' : 'Some logs name'} no caller: studying other logs that mention ${templates.join(', ')}`);
+    setAnalyzing(true);
+    try {
+      const found = await Promise.all(
+        templates.map(async (template) => {
+          try {
+            const res = await apiFetch('/deep-analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ env: envId, template, from: range?.[0]?.toISOString() }),
+            });
+            return res.ok ? [template, await res.json()] : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const results = found.filter(Boolean);
+      setDeep(Object.fromEntries(results));
+      addStep(
+        results.some(([, r]) => r.name)
+          ? `Related logs point to ${results.filter(([, r]) => r.name).map(([t, r]) => `${r.name} (${t})`).join(', ')}`
+          : 'No caller found in the related logs',
+      );
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   async function analyze(list) {
+    addStep('Asking FuelIX to find the caller in each log');
     setAnalyzing(true);
     setError('');
     const t1 = performance.now();
@@ -339,11 +418,9 @@ export default function App() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Analyze failed (${res.status})`);
       setValues(body.ids);
-      setTeams(body.teams);
       setStats((s) => ({
         ...s,
         identified: body.ids.filter(Boolean).length,
-        withTeam: body.teams.filter(Boolean).length,
         analyzeMs: Math.round(performance.now() - t1),
       }));
     } catch (err) {
@@ -525,8 +602,8 @@ export default function App() {
                 <img className="info-butterfly" src="/butterfly.png" alt="" aria-hidden="true" />
                 <strong className="info-title">Cloud logs &amp; FuelIX analysis</strong>
                 <span className="info-text">
-                  This page reads logs from Google Cloud Logging, asks FuelIX to find an identifier in each log, and then looks that
-                  identifier up in the CMDBID.xlsx sheet to show the consumer and the team that triggered the template.
+                  This page reads logs from Google Cloud Logging and asks FuelIX to find an identifier in each log, to show which
+                  application triggered the template.
                 </span>
               </span>
 
@@ -549,7 +626,6 @@ export default function App() {
                       <InfoRow label="Logs loaded">{stats.logs}</InfoRow>
                       <InfoRow label="Log search time">{fmtMs(stats.searchMs)}</InfoRow>
                       <InfoRow label="Identifiers found">{stats.identified ?? 'Working…'}</InfoRow>
-                      <InfoRow label="Teams found">{stats.withTeam ?? 'Working…'}</InfoRow>
                       <InfoRow label="FuelIX time">{fmtMs(stats.analyzeMs)}</InfoRow>
                     </dl>
                   ) : (
@@ -568,7 +644,7 @@ export default function App() {
                 </span>
 
                 <span className="info-col">
-                  <span className="info-h">How the team is found</span>
+                  <span className="info-h">How the application is found</span>
                   <ol className="info-steps">
                     <li>Logs are fetched from the chosen source, newest first, up to Max results.</li>
                     <li>Bearer tokens are removed from every log before it is sent to FuelIX.</li>
@@ -576,10 +652,7 @@ export default function App() {
                       FuelIX reports each key it finds, such as <code>X-Consumer-Username=PaymentManagement</code>, and each value is
                       checked against the log text.
                     </li>
-                    <li>
-                      Each value is looked up in the Key column of CMDBID.xlsx{info?.cmdbRows != null ? ` (${info.cmdbRows} rows)` : ''}. The first key
-                      with a row wins, and that row&apos;s Description is the team.
-                    </li>
+                    <li>The first key found, in the priority order below, is the identifier of that log.</li>
                   </ol>
 
                   <span className="info-h">Search keys, in priority order</span>
@@ -604,10 +677,13 @@ export default function App() {
         <div>
           <div className="brand-hero">
             <span className="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
-                <circle cx="12" cy="12" r="5" strokeDasharray="25.4 6" transform="rotate(124.4 12 12)" />
-                <circle cx="12" cy="12" r="9" strokeDasharray="46.5 10" transform="rotate(121.9 12 12)" />
+              {/* A trace: a white line climbing from a white start dot to a green end dot with a ring around it. */}
+              <svg viewBox="0 0 64 64" width="64" height="64">
+                <circle cx="32" cy="32" r="32" fill="#4b286d" />
+                <polyline points="16,47 28,34 34,40 46,24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="16" cy="47" r="5" fill="#fff" />
+                <circle cx="47" cy="22" r="10" fill="none" stroke="#66cc00" strokeOpacity="0.55" strokeWidth="2" />
+                <circle cx="47" cy="22" r="6" fill="#66cc00" />
               </svg>
             </span>
             <div>
@@ -675,24 +751,28 @@ export default function App() {
           </div>
         )}
 
-        {(busy || understood) && (
+        {busy && (
+          // The moving purple dot with what is being done right now: finished steps are ticked, the current one is lit.
+          <div className="activity" role="status" aria-live="polite">
+            <span className="thinking">
+              <i aria-hidden="true" />
+            </span>
+            <ol className="activity-steps">
+              {steps.slice(-6).map((s, i) => (
+                <li key={`${i}-${s.text}`} className={s.done ? 'done' : 'now'}>
+                  {s.text}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
+        {!busy && understood && (
           <p className="chat-status" role="status">
-            {busy ? (
-              // One big pulsing purple dot while working; the words are kept for screen readers only.
-              <span className="thinking">
-                <span className="sr-only">
-                  {interpreting ? 'Reading your request' : analyzing ? 'Finding the triggering application' : 'Searching the logs'}
-                </span>
-                <i aria-hidden="true" />
-              </span>
-            ) : (
-              <>
-                {understood.by === 'exact' ? 'FuelIX could not be reached, so I searched your text as typed: ' : 'Searched for '}
-                <strong>{understood.search}</strong>
-                {' · '}{understood.time}
-                {understood.env && <>{' · '}{understood.env}</>}
-              </>
-            )}
+            {understood.by === 'exact' ? 'FuelIX could not be reached, so I searched your text as typed: ' : 'Searched for '}
+            <strong>{understood.search}</strong>
+            {' · '}{understood.time}
+            {understood.env && <>{' · '}{understood.env}</>}
           </p>
         )}
 
@@ -731,15 +811,21 @@ export default function App() {
       {logs && logs.length === 0 && <p className="no-results">No Search Result Found</p>}
       {logs && logs.length > 0 && (
         <p className="count">
-          Showing {logs.length} unique log{logs.length === 1 ? '' : 's'}, newest first
-          {(() => {
-            const hidden = logs.reduce((n, l) => n + Math.max((l.repeats ?? 1) - 1, 0), 0);
-            return hidden > 0 ? ` · ${hidden} repeated record${hidden === 1 ? '' : 's'} hidden` : '';
-          })()}
-          {stats?.range?.[0] && stats?.range?.[1]
-            ? ` (searched ${fmtDateTime(stats.range[0])} → ${fmtDateTime(stats.range[1])})`
-            : ` (${logs[logs.length - 1].timestamp} → ${logs[0].timestamp})`}
-          {logs.length >= Number(limit) && ' — limit reached, older matches are hidden. Raise Max results in Settings (gear icon) or narrow the range.'}
+          <TypedLine
+            text={(() => {
+              const hidden = logs.reduce((n, l) => n + Math.max((l.repeats ?? 1) - 1, 0), 0);
+              const range =
+                stats?.range?.[0] && stats?.range?.[1]
+                  ? ` (searched ${fmtDateTime(stats.range[0])} → ${fmtDateTime(stats.range[1])})`
+                  : ` (${logs[logs.length - 1].timestamp} → ${logs[0].timestamp})`;
+              return (
+                `Showing ${logs.length} unique log${logs.length === 1 ? '' : 's'}, newest first` +
+                (hidden > 0 ? ` · ${hidden} repeated record${hidden === 1 ? '' : 's'} hidden` : '') +
+                range +
+                (logs.length >= Number(limit) ? ' — limit reached, older matches are hidden. Raise Max results in Settings (gear icon) or narrow the range.' : '')
+              );
+            })()}
+          />
         </p>
       )}
       {logs?.map((log, i) => (
@@ -754,36 +840,16 @@ export default function App() {
                 </span>
               )}
             </header>
-            <LogView message={log.message} match={values?.[i]} keys={config.searchKeys} />
+            {/* The first few logs are typed out as they appear; a long list shows the rest at once. */}
+            <LogView message={log.message} match={values?.[i]} keys={config.searchKeys} animate={i < TYPED_LOGS} />
           </div>
           <aside className="log-app" title={values?.[i] ? `${values[i].key}: ${values[i].value}` : undefined}>
-            {!values ? (
-              <p className="hint">
-                {analyzing ? (
-                  <span className="finding" role="status">
-                    Finding the triggering application
-                    <span className="dots" aria-hidden="true">
-                      <i>.</i>
-                      <i>.</i>
-                      <i>.</i>
-                    </span>
-                  </span>
-                ) : (
-                  'Triggering application not determined.'
-                )}
-              </p>
-            ) : null}
             <h3 className="trace-title">Triggering Application</h3>
-            <table className="trace-table">
-              <tbody>
-                {[...findHeaderValues(log.message, TRACE_HEADERS), { name: 'Sender', value: findSenderName(log.message) }].map(({ name, value }) => (
-                  <tr key={name}>
-                    <th scope="row">{name}</th>
-                    <td className={value ? '' : 'muted'}>{value ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TraceTable
+              message={log.message}
+              animate={i < TYPED_LOGS}
+              deepResult={hasCaller(log.message) ? null : deep[templateNameOf(log.message) ?? understood?.search] ?? null}
+            />
           </aside>
         </article>
       ))}

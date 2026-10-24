@@ -114,7 +114,7 @@ export function findHeaderValues(text, names) {
     // Quotes may be escaped (\") when the value sits inside a JSON string, and a ";" before the name means it is
     // part of another header's value (for example "X-dynaTrace-Application=v=2;appId=...").
     const m = new RegExp(`(?<![A-Za-z0-9_;-])${escapeRegex(name)}[\\\\"']*\\s*[:=]\\s*[\\\\"']*([\\w.@+-]+)`, 'i').exec(text);
-    return { name, value: m ? m[1] : null };
+    return { name, value: m ? m[1] : null, index: m ? m.index : -1 };
   });
 }
 
@@ -127,6 +127,46 @@ export function findSenderName(text) {
   const m = /(?<![A-Za-z0-9_])sender[\\"']*\s*:\s*\{[^{}]*?[\\"']name[\\"']*\s*:\s*[\\"']*([\w.@+-]+)/i.exec(text);
   return m ? m[1] : null;
 }
+
+// Values that are only a placeholder, not a real name (a template that was never filled in).
+const PLACEHOLDER_NAMES = new Set(['appname', 'string', 'null', 'undefined', 'name', 'sender', 'test', 'unknown', 'n/a', 'none']);
+
+/**
+ * Whether the log's own request says who called: an X-Consumer-Username / X-Consumer-ID, an appId, an
+ * originatorApplicationId, or a sender name that is not a placeholder.
+ */
+export function hasCaller(text) {
+  const named = findHeaderValues(text, ['X-Consumer-Username', 'X-Consumer-ID', 'appId', 'originatorApplicationId']).map((h) => h.value);
+  return [...named, findSenderName(text)].some((v) => v && !PLACEHOLDER_NAMES.has(v.toLowerCase()));
+}
+
+const lastStart = (text, pattern) => {
+  let last = -1;
+  for (const m of text.matchAll(pattern)) last = m.index;
+  return last;
+};
+
+/**
+ * Whether the value found at this position in the log came from a request (a call To ECP) or from a response (the
+ * answer From ECP): the nearest "request [{" or "response [{" before it decides. Null when neither comes before it.
+ * @param {string} text the whole log message
+ * @param {number} index where the value was found (the index findHeaderValues reports)
+ * @returns {{kind: 'request'|'response', label: string, direction: string}|null} label is Request or Response;
+ *   direction is the same thing as To ECP / From ECP
+ */
+export function directionAt(text, index) {
+  if (index < 0) return null;
+  const before = text.slice(0, index);
+  const request = lastStart(before, /(?<![A-Za-z0-9_])request\s*\[\{/gi);
+  const response = lastStart(before, /(?<![A-Za-z0-9_])response\s*\[\{/gi);
+  if (request < 0 && response < 0) return null;
+  return request > response
+    ? { kind: 'request', label: 'Request', direction: 'To ECP' }
+    : { kind: 'response', label: 'Response', direction: 'From ECP' };
+}
+
+/** The templateName in the log ("templateName":"TELUS_WELCOME"), or null. */
+export const templateNameOf = (text) => findHeaderValues(text, ['templateName'])[0].value;
 
 // Show only the shape of a bearer token, never the token itself.
 export const maskHeaderValue = (name, value) =>
