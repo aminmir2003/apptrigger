@@ -73,6 +73,7 @@ try {
     ['dedupe: another template from the same caller is kept', run([reqLog('ECP', 'T1'), reqLog('ECP', 'T2')]).every(([kept]) => kept)],
     ['dedupe: a template inside an escaped JSON string is read', recordKey(escapedLog('ECP', 'FFH_SelfLinkConf')) === 'ffh_selflinkconf|ecp'],
     ['dedupe: a record naming neither is never collapsed', run(['Cached dummy config', 'Cached dummy config']).every(([kept]) => kept)],
+    ['dedupe: the oldest repeat gives the first-seen time', (() => { const u = uniqueRecords(); const m = reqLog('ECP', 'T1'); const a = { message: m, timestamp: '2026-10-26T01:00:00Z' }; u.add(a); u.add({ message: m, timestamp: '2026-10-25T23:00:00Z' }); u.add({ message: m, timestamp: '2026-10-25T20:00:00Z' }); return a.repeats === 3 && a.firstSeen === '2026-10-25T20:00:00Z' && a.timestamp === '2026-10-26T01:00:00Z'; })()],
     ['dedupe: the newest (first seen) record is the one kept', (() => { const u = uniqueRecords(); const a = { message: reqLog('ECP', 'T1'), id: 'new' }; const b = { message: reqLog('ECP', 'T1'), id: 'old' }; return u.add(a) && !u.add(b) && a.repeats === 2; })()],
   );
   const { parseJsonArray } = await import('../src/fuelix.js');

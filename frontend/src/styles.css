@@ -29,10 +29,11 @@ main { max-width: none; margin: 0; padding: 8px 100px 48px; }
 .brand-hero { display: flex; align-items: center; gap: 16px; }
 .brand-mark { flex: none; display: flex; width: 64px; height: 64px; }
 .brand-mark svg { display: block; }
-.hero .brand-name { display: flex; align-items: center; gap: 10px; margin: 0 0 2px; font-family: 'Poppins', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 34px; line-height: 1.15; font-weight: 600; color: var(--purple); }
-.brand-name span { color: var(--green); margin-left: -10px; }
+.hero .brand-name { display: flex; align-items: center; gap: 10px; margin: 0 0 2px; font-family: 'Poppins', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 34px; line-height: 1.15; font-weight: 500; color: var(--purple); }
+.brand-name b { font-weight: 700; }
+.brand-trace { color: var(--green); }
 .brand-name em { padding: 2px 14px; border-radius: 999px; background: var(--green-bright); color: #1c4600; font-size: 18px; font-style: normal; font-weight: 500; }
-.hero .brand-sub { margin: 0; font-family: 'Nunito', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 18px; color: var(--muted); }
+.hero .brand-sub { margin: 0; font-family: 'Nunito', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14.8px; color: var(--muted); }
 .hero h1 { margin: 0 0 6px; font-size: 38px; line-height: 1.1; font-weight: 700; color: var(--purple); }
 .hero p { margin: 0; font-size: 16px; color: var(--muted); white-space: nowrap; }
 
@@ -73,6 +74,12 @@ button { font: inherit; font-size: 15px; cursor: pointer; }
 .suggestion:focus-visible { outline: 3px solid rgba(75, 40, 109, 0.4); outline-offset: 2px; }
 .chat-status { margin: 0; padding: 0 6px; font-size: 14px; color: var(--muted); text-align: center; }
 .chat-status strong { color: var(--purple); }
+/* The summary above the results, told like a chat reply: short paragraphs with the key names highlighted. */
+.summary { margin: 0 0 14px; padding: 14px 18px; background: var(--purple-tint); border: 1px solid var(--line); border-radius: 18px; }
+.summary-title { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 18px; font-weight: 700; color: var(--green); }
+.summary p { margin: 0 0 8px; font-size: 15px; line-height: 1.55; color: var(--text); }
+.summary p:last-child { margin-bottom: 0; }
+.summary strong { color: var(--purple); }
 /* Typewriter caret: blinks at the end of text that is still being typed. */
 .caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 1px; background: var(--purple); vertical-align: text-bottom; animation: caret-blink 0.9s steps(1) infinite; }
 @keyframes caret-blink { 50% { opacity: 0; } }
@@ -226,7 +233,7 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size
 .app-details dt { font-size: 13px; font-weight: 700; color: var(--purple); }
 .app-details dt::after { content: " :"; }
 .app-details dd { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); text-decoration: underline; text-underline-offset: 3px; word-break: break-word; }
-.trace-title { margin: 0 0 10px; align-self: center; text-align: center; font-size: 16px; font-weight: 700; color: var(--purple); }
+.trace-title { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 10px; align-self: center; text-align: center; font-size: 16px; font-weight: 700; color: var(--purple); }
 .trace-table { margin-top: 0; border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; border: 1px solid var(--line); border-radius: 8px; }
 .trace-table th, .trace-table td { padding: 6px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); word-break: break-word; }
 .trace-table tr:last-child th, .trace-table tr:last-child td { border-bottom: none; }

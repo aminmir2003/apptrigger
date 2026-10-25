@@ -3,7 +3,7 @@ import LogView from './LogView.jsx';
 import { apiFetch } from './api.js';
 import { hasCaller, templateNameOf } from './logFormat.js';
 import TraceTable from './TraceTable.jsx';
-import { TypedLine } from './typewriter.jsx';
+import Summary from './Summary.jsx';
 
 // A Cloud Logging insertId: lowercase letters and digits, both present, like "2hz8yue1s9cs". Template names are
 // upper case with underscores, so they never look like this.
@@ -108,8 +108,6 @@ const saveSetting = (name, value) => {
     localStorage.setItem(`logsearch.v2.${name}`, value);
   } catch {}
 };
-
-const fmtDateTime = (d) => d.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 const fmtMs =(ms) => (ms == null ? 'n/a' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
 
@@ -247,7 +245,7 @@ export default function App() {
       setPreset('today');
     }
     const chosen = envs.find((x) => x.id === envId);
-    setUnderstood({ search: plan.search, time: timeLabel, env: chosen?.label ?? null, by: plan.by });
+    setUnderstood({ search: plan.search, time: timeLabel, env: chosen?.label ?? null, project: chosen?.project ?? null, by: plan.by });
     addStep(
       plan.by === 'exact'
         ? `FuelIX could not be reached, so your text is searched as typed: ${plan.search}`
@@ -688,7 +686,9 @@ export default function App() {
             </span>
             <div>
               <h1 className="brand-name">
-                Trigger<span>Trace</span>
+                <span className="brand-word">
+                  <b>T</b>rigger<span className="brand-trace"><b>T</b>race</span>
+                </span>
                 <em>Bot</em>
               </h1>
               <p className="brand-sub">Find which application triggered a template</p>
@@ -810,23 +810,14 @@ export default function App() {
       {error && <p className="error">{error}</p>}
       {logs && logs.length === 0 && <p className="no-results">No Search Result Found</p>}
       {logs && logs.length > 0 && (
-        <p className="count">
-          <TypedLine
-            text={(() => {
-              const hidden = logs.reduce((n, l) => n + Math.max((l.repeats ?? 1) - 1, 0), 0);
-              const range =
-                stats?.range?.[0] && stats?.range?.[1]
-                  ? ` (searched ${fmtDateTime(stats.range[0])} → ${fmtDateTime(stats.range[1])})`
-                  : ` (${logs[logs.length - 1].timestamp} → ${logs[0].timestamp})`;
-              return (
-                `Showing ${logs.length} unique log${logs.length === 1 ? '' : 's'}, newest first` +
-                (hidden > 0 ? ` · ${hidden} repeated record${hidden === 1 ? '' : 's'} hidden` : '') +
-                range +
-                (logs.length >= Number(limit) ? ' — limit reached, older matches are hidden. Raise Max results in Settings (gear icon) or narrow the range.' : '')
-              );
-            })()}
-          />
-        </p>
+        <Summary
+          logs={logs}
+          stats={stats}
+          understood={understood}
+          deep={deep}
+          limit={limit}
+          sourceLabel={RESOURCES.find((r) => r.id === resource)?.label ?? resource}
+        />
       )}
       {logs?.map((log, i) => (
         <article key={i} className="log-card">
@@ -844,7 +835,16 @@ export default function App() {
             <LogView message={log.message} match={values?.[i]} keys={config.searchKeys} animate={i < TYPED_LOGS} />
           </div>
           <aside className="log-app" title={values?.[i] ? `${values[i].key}: ${values[i].value}` : undefined}>
-            <h3 className="trace-title">Triggering Application</h3>
+            <h3 className="trace-title">
+              {/* The trace mark from the logo, small: a line climbing from a start dot to a green end dot with a ring. */}
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+                <polyline points="3.5,19.5 9,13 13,16.5 19,8" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="3.5" cy="19.5" r="2.3" fill="currentColor" />
+                <circle cx="19" cy="7" r="4.6" fill="none" stroke="#66cc00" strokeOpacity="0.55" strokeWidth="1.4" />
+                <circle cx="19" cy="7" r="2.8" fill="#66cc00" />
+              </svg>
+              Triggering Application
+            </h3>
             <TraceTable
               message={log.message}
               animate={i < TYPED_LOGS}

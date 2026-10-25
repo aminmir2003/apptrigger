@@ -25,7 +25,8 @@ export function recordKey(message) {
 /**
  * Remembers the first (newest) record of each kind and counts the repeats of it.
  * add() returns true when the record is new and should be kept, false when it was only counted.
- * Each kept record gets a "repeats" number: how many identical records it stands for, itself included.
+ * Each kept record gets a "repeats" number (how many identical records it stands for, itself included) and a
+ * "firstSeen" time (the oldest of them; its own "timestamp" is the newest).
  */
 export function uniqueRecords() {
   const seen = new Map();
@@ -33,10 +34,12 @@ export function uniqueRecords() {
     add(result) {
       const key = recordKey(result.message);
       result.repeats = 1;
+      result.firstSeen = result.timestamp; // the oldest of the identical records; moves back as older ones are counted
       if (key === null) return true;
       const first = seen.get(key);
       if (first) {
         first.repeats += 1;
+        first.firstSeen = result.timestamp; // records arrive newest first, so each repeat is older than the last
         return false;
       }
       seen.set(key, result);
