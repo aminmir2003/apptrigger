@@ -1,5 +1,10 @@
 # apptrigger API for Cloud Run.
-FROM node:22-alpine
+# Node 24 is the current long-term-support release (22 is the oldest still supported). The tag follows the newest 24.x
+# patch each time the image is built.
+FROM node:24-alpine
+
+# Pick up the operating system's latest security fixes on top of what the base image shipped with.
+RUN apk upgrade --no-cache
 
 WORKDIR /app
 

@@ -10,7 +10,7 @@
     "test:logs": "node --env-file=.env src/testQuery.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "dependencies": {
     "@google-cloud/logging": "^12.2.0",

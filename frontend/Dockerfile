@@ -1,7 +1,7 @@
 # apptrigger web page for Cloud Run: built with Vite, served by nginx.
 
 # ─── Stage 1: build ───────────────────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -17,6 +17,9 @@ RUN npm run build
 
 # ─── Stage 2: serve with nginx ────────────────────────────────────────────────
 FROM nginx:stable-alpine
+
+# Pick up the operating system's latest security fixes on top of what the base image shipped with.
+RUN apk upgrade --no-cache
 
 RUN rm /etc/nginx/conf.d/default.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
