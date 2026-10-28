@@ -21,11 +21,10 @@ const SETTINGS = [
   ['GCP_PROJECT_ID', 'APP_LOGS_PROJECT_ID'],
 
   // NP / PR switch in the page: the project behind each side, and the service account key (the whole JSON key file)
-  // the backend signs in with to read it. Each side has its own service account. The NP key is not here: the workflow
-  // mounts it from Secret Manager (--set-secrets GCP_SA_KEY_NP=...), like the FuelIX key.
+  // the backend signs in with to read it. Each side has its own service account. The keys are not here: the workflow
+  // mounts them from Secret Manager (--set-secrets GCP_SA_KEY_NP=..., GCP_SA_KEY_PR=...), like the FuelIX key.
   ['GCP_PROJECT_NP', 'APP_LOGS_PROJECT_NP'],
   ['GCP_PROJECT_PR', 'APP_LOGS_PROJECT_PR'],
-  ['GCP_SA_KEY_PR', 'APP_LOGS_SA_KEY_PR'],
 
   // FuelIX. The API key is not here: the workflow mounts it from Secret Manager (--set-secrets FUELIX_API_KEY=...),
   // so it never passes through this file or a GitHub secret.
