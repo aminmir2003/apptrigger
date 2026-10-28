@@ -461,7 +461,10 @@ export default function App() {
   return (
     <>
       <nav className="topbar">
-        <img className="topbar-logo" src="/TELUS_Logo.svg" alt="TELUS" />
+        <div className="topbar-brand">
+          <img className="topbar-logo" src="/TELUS_Logo.svg" alt="TELUS" />
+          <span className="topbar-tagline">let&rsquo;s make the future friendly<sup>&trade;</sup></span>
+        </div>
         <div className="topbar-right">
           {envs.length > 1 && (
             // An on/off switch like the one in Settings: off searches NP, on searches PR, and the word beside it says which.

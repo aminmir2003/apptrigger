@@ -139,7 +139,13 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size
   .keys { min-width: 0; width: 100%; }
 }
 .hero-logo { height: 130px; width: auto; mix-blend-mode: multiply; filter: brightness(1.05); margin: 0; justify-self: end; }
-.topbar-logo { height: 44px; width: auto; }
+.topbar-logo { height: var(--logo-h, 44px); width: auto; }
+/* The TELUS logo with its tagline underneath, as in the brand lock-up. */
+.topbar-brand { --logo-h: 44px; display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 6px 0 8px; }
+.topbar-tagline { font-family: 'Nunito', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 600; line-height: 1.1; color: var(--purple); white-space: nowrap;
+  /* Starts exactly under the T of TELUS: the logo file is 145 x 28 and its T begins 55.8 units from the left. */
+  margin-left: calc(var(--logo-h) * 145 / 28 * 55.8 / 145); }
+.topbar-tagline sup { font-size: 8px; font-weight: 500; vertical-align: super; margin-left: 1px; }
 @media (max-width: 640px) {
   .log-card { grid-template-columns: 1fr; }
   .log-app { border-left: none; border-top: 1px solid var(--line); }
