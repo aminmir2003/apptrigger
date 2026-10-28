@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { directionAt, findHeaderValues, templateNameOf } from './logFormat.js';
+import SummaryActions from './SummaryActions.jsx';
 import { Typed, useTypewriter } from './typewriter.jsx';
 
 const MAX_RECORDS = 5; // unique records described one by one; the rest are only counted
@@ -104,6 +105,8 @@ export default function Summary({ logs, stats, understood, deep, limit, sourceLa
     return { ...p, start };
   }));
   const shown = useTypewriter(offset, true, { seconds: 2.4 });
+  // The answer as plain text, for copying and reading aloud.
+  const plainText = `AI Summary\n\n${paragraphs.map((pieces) => pieces.map((p) => p.text).join('')).join('\n\n')}`;
 
   return (
     <section className="summary" aria-label="AI Summary">
@@ -122,6 +125,8 @@ export default function Summary({ logs, stats, understood, deep, limit, sourceLa
           {pieces.map((p, j) => (p.bold ? <strong key={j}><Typed text={p.text} start={p.start} shown={shown} /></strong> : <Typed key={j} text={p.text} start={p.start} shown={shown} />))}
         </p>
       ))}
+      {/* The buttons appear once the answer has finished typing, at the bottom right. */}
+      {shown >= offset && <SummaryActions text={plainText} />}
     </section>
   );
 }

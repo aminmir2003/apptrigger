@@ -80,6 +80,12 @@ button { font: inherit; font-size: 15px; cursor: pointer; }
 .summary p { margin: 0 0 8px; font-size: 15px; line-height: 1.55; color: var(--text); }
 .summary p:last-child { margin-bottom: 0; }
 .summary strong { color: var(--purple); }
+/* The small buttons under the answer, at the bottom right: copy, read aloud, good, bad. */
+.summary-actions { display: flex; justify-content: flex-end; gap: 2px; margin-top: 6px; }
+.summary-action { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: none; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
+.summary-action:hover { background: #fff; color: var(--purple); }
+.summary-action.on { color: var(--green); }
+.summary-action:focus-visible { outline: 3px solid rgba(75, 40, 109, 0.4); outline-offset: 1px; }
 /* Typewriter caret: blinks at the end of text that is still being typed. */
 .caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 1px; background: var(--purple); vertical-align: text-bottom; animation: caret-blink 0.9s steps(1) infinite; }
 @keyframes caret-blink { 50% { opacity: 0; } }

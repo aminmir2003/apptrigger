@@ -52,7 +52,7 @@ function PlainText({ text, animate = false }) {
 }
 
 // Copies text to the clipboard. navigator.clipboard needs a secure page, so fall back to a hidden textarea.
-async function copyText(text) {
+export async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
     return;
