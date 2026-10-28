@@ -831,7 +831,11 @@ export default function App() {
               <time>{log.timestamp}</time>
               {log.repeats > 1 && (
                 <span className="repeats" title="Same template and X-Consumer-Username; only the newest is shown">
-                  Total No of Requests Triggered during this time as <strong>{log.repeats}&times;</strong>
+                  {/* A small bar chart (Material "bar_chart"): a count of requests. */}
+                  <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false">
+                    <path fill="currentColor" d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" />
+                  </svg>
+                  Total Requests <strong>{log.repeats}&times;</strong>
                 </span>
               )}
             </header>
