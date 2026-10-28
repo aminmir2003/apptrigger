@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import LogView from './LogView.jsx';
-import { apiFetch } from './api.js';
+import { apiError, apiFetch } from './api.js';
 import { hasCaller, templateNameOf } from './logFormat.js';
 import TraceTable from './TraceTable.jsx';
 import Summary from './Summary.jsx';
@@ -199,11 +199,11 @@ export default function App() {
     // FuelIX reads the typed request and says what to search for. If it can't be reached, the text is searched as typed.
     let plan;
     try {
-      const res = await apiFetch('/interpret', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: search }),
-      });
+      const res = await apiFetch(
+        '/interpret',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: search }) },
+        75_000,
+      );
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
       plan = body;
@@ -267,7 +267,7 @@ export default function App() {
       if (range[0]) params.set('from', range[0].toISOString());
       if (range[1]) params.set('to', range[1].toISOString());
       const t0 = performance.now();
-      const res = await apiFetch(`/logs?${params}`);
+      const res = await apiFetch(`/logs?${params}`, {}, 150_000);
       const text = await res.text();
       let body;
       try {
@@ -294,7 +294,7 @@ export default function App() {
       await finishSteps();
       setLogs(body);
     } catch (err) {
-      setError(err.message);
+      setError(apiError(err, 'The search'));
       setLogs(null);
     } finally {
       setLoading(false);
@@ -376,11 +376,11 @@ export default function App() {
       const found = await Promise.all(
         templates.map(async (template) => {
           try {
-            const res = await apiFetch('/deep-analyze', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ env: envId, template, from: range?.[0]?.toISOString() }),
-            });
+            const res = await apiFetch(
+              '/deep-analyze',
+              { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ env: envId, template, from: range?.[0]?.toISOString() }) },
+              150_000,
+            );
             return res.ok ? [template, await res.json()] : null;
           } catch {
             return null;
@@ -405,14 +405,18 @@ export default function App() {
     setError('');
     const t1 = performance.now();
     try {
-      const res = await apiFetch('/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: list.map((l) => l.message),
-          keys: searchKey === ALL_KEYS ? config.searchKeys : [searchKey],
-        }),
-      });
+      const res = await apiFetch(
+        '/analyze',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: list.map((l) => l.message),
+            keys: searchKey === ALL_KEYS ? config.searchKeys : [searchKey],
+          }),
+        },
+        240_000,
+      );
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Analyze failed (${res.status})`);
       setValues(body.ids);
@@ -422,7 +426,7 @@ export default function App() {
         analyzeMs: Math.round(performance.now() - t1),
       }));
     } catch (err) {
-      setError(err.message);
+      setError(apiError(err, 'The analysis'));
     } finally {
       setAnalyzing(false);
     }

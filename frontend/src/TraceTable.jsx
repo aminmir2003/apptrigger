@@ -12,10 +12,13 @@ const TRACE_HEADERS = ['X-Consumer-Username', 'X-Consumer-ID', 'Kong-Request-ID'
  * @param {{ message: string, deepResult?: object|null, animate?: boolean }} props
  */
 export default function TraceTable({ message, deepResult = null, animate = false }) {
-  const rows = useMemo(
-    () => [...findHeaderValues(message, TRACE_HEADERS), { name: 'Sender', value: findSenderName(message), index: -1 }],
-    [message],
-  );
+  const rows = useMemo(() => {
+    const found = findHeaderValues(message, TRACE_HEADERS);
+    // The notification type is the log's messageType ("SMS", "Email"); it sits right after the consumer.
+    const type = { name: 'Notification type', value: findHeaderValues(message, ['messageType'])[0].value, index: -1 };
+    const afterConsumer = found.findIndex((r) => r.name === 'X-Consumer-Username') + 1;
+    return [...found.slice(0, afterConsumer), type, ...found.slice(afterConsumer), { name: 'Sender', value: findSenderName(message), index: -1 }];
+  }, [message]);
   // Each value's place in the typing order: the characters before it.
   const texts = rows.map((r) => r.value ?? '—');
   const starts = texts.map((_, i) => texts.slice(0, i).reduce((n, t) => n + t.length, 0));

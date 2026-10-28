@@ -4,6 +4,7 @@
 import { fieldValue } from './dedupe.js';
 import { queryLogs } from './logging.js';
 import { askWhichApplication } from './fuelix.js';
+import { log, timer } from './log.js';
 
 // Values that are only a placeholder, not a real name (a template that was never filled in).
 const PLACEHOLDERS = new Set(['appname', 'string', 'null', 'undefined', 'name', 'sender', 'test', 'unknown', 'n/a', 'none']);
@@ -74,16 +75,24 @@ export async function deepAnalyze({ env, template, from }) {
   const asked = from ? new Date(from) : null;
   const start = asked && !Number.isNaN(asked.getTime()) && asked < weekAgo ? asked : weekAgo;
 
+  log('deep', `${template}: reading every log that mentions it since ${start.toISOString()} (at least 7 days, up to 200 logs)`);
+  const t = timer();
   const logs = await queryLogs({ env, search: template, resource: 'all', raw: true, from: start.toISOString(), limit: 200 });
   const examined = logs.length;
   const candidates = rankCandidates(logs.map((l) => l.message));
   const base = { template, examined, since: start.toISOString(), candidates: candidates.slice(0, 5) };
+  log('deep', `${template}: ${examined} log${examined === 1 ? '' : 's'} read in ${t.text()}, ${candidates.length} possible caller${candidates.length === 1 ? '' : 's'}${candidates.length ? ` (top: ${candidates.slice(0, 3).map((c) => `${c.value} via ${c.field} in ${c.count}`).join('; ')})` : ''}`);
 
   if (candidates.length === 0) {
+    log('deep', `${template}: no caller named anywhere, so no application is suggested`);
     return { ...base, name: null, by: 'none', reason: examined ? `None of the ${examined} logs that mention ${template} name a caller.` : `No other logs mention ${template} in this period.` };
   }
   const picked = validatePick(await askWhichApplication(template, candidates, examined), candidates);
-  if (picked) return { ...base, name: picked.value, field: picked.field, count: picked.count, confidence: picked.confidence, reason: picked.reason, by: 'fuelix' };
+  if (picked) {
+    log('deep', `${template}: FuelIX picked ${picked.value} (${picked.confidence} confidence)`);
+    return { ...base, name: picked.value, field: picked.field, count: picked.count, confidence: picked.confidence, reason: picked.reason, by: 'fuelix' };
+  }
   const best = bestByRanking(candidates, examined);
+  log('deep', `${template}: the plain ranking picked ${best.value} (${best.confidence} confidence)`);
   return { ...base, name: best.value, field: best.field, count: best.count, confidence: best.confidence, reason: '', by: 'ranking' };
 }

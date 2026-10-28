@@ -5,12 +5,35 @@ import { queryLogs, environments } from './logging.js';
 import { extractIds, interpretPrompt } from './fuelix.js';
 import { deepAnalyze } from './deepAnalysis.js';
 import { getConfig, configSource, chooseKeys } from './githubConfig.js';
+import { fail, log, timer, warn } from './log.js';
 
 const app = express();
 app.use(express.json({ limit: '25mb' }));
 
 // The frontend is a separate service: let its address call this API.
 setupCors(app);
+
+// One line when a request arrives and one when it ends, with how long it took, so a slow or stuck request is easy to
+// spot. The numbers tie the two lines together. Only the method, path and the search parameters are written, never the
+// body of a request (a POST can hold log text).
+let requestCount = 0;
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  const id = ++requestCount;
+  const t = timer();
+  const what = `${req.method} ${req.path}`;
+  const params = req.method === 'GET' && Object.keys(req.query).length ? ` ${JSON.stringify(req.query)}` : '';
+  log('http', `#${id} --> ${what}${params}`);
+  let finished = false;
+  res.on('finish', () => {
+    finished = true;
+    (res.statusCode >= 500 ? warn : log)('http', `#${id} <-- ${what} ${res.statusCode} in ${t.text()}`);
+  });
+  res.on('close', () => {
+    if (!finished) warn('http', `#${id} <-- ${what} the browser gave up after ${t.text()} before an answer was sent`);
+  });
+  next();
+});
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
@@ -21,7 +44,7 @@ app.get('/logs', async (req, res) => {
     const { env, search, insertId, resource, service, revision, severity, filter, from, to, hours, limit } = req.query;
     res.json(await queryLogs({ env, search, insertId, resource, service, revision, severity, filter, from, to, hours: Number(hours) || 1, limit }));
   } catch (err) {
-    console.error(err);
+    fail('http', err.stack ?? String(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -37,7 +60,7 @@ app.post('/interpret', async (req, res) => {
     }
     res.json(await interpretPrompt(prompt));
   } catch (err) {
-    console.error(err);
+    fail('http', err.stack ?? String(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -52,7 +75,7 @@ app.post('/deep-analyze', async (req, res) => {
     if (typeof template !== 'string' || !template.trim()) return res.status(400).json({ error: 'template must be a non-empty string' });
     res.json(await deepAnalyze({ env, template: template.trim(), from }));
   } catch (err) {
-    console.error(err);
+    fail('http', err.stack ?? String(err));
     res.status(err.message === 'Invalid template name' ? 400 : 500).json({ error: err.message });
   }
 });
@@ -71,7 +94,7 @@ app.get('/config', async (_req, res) => {
     const { searchKeys, labels } = await getConfig();
     res.json({ searchKeys, labels, source: configSource() });
   } catch (err) {
-    console.error(err);
+    fail('http', err.stack ?? String(err));
     res.status(502).json({ error: err.message, source: configSource() });
   }
 });
@@ -97,7 +120,7 @@ app.post('/analyze', async (req, res) => {
     const found = await extractIds(messages, searchKeys);
     res.json({ ids: found.map((list) => list[0] ?? null) });
   } catch (err) {
-    console.error(err);
+    fail('http', err.stack ?? String(err));
     res.status(500).json({ error: err.message });
   }
 });
@@ -110,7 +133,7 @@ if (process.env.PORTAL_ENABLED === 'true') {
     try {
       res.json(await portalLogin());
     } catch (err) {
-      console.error(err);
+      fail('http', err.stack ?? String(err));
       res.status(500).json({ error: err.message });
     }
   });
@@ -131,4 +154,22 @@ const port = process.env.PORT || 3000;
 // This API has no sign-in, so on a developer machine it only accepts connections from that machine.
 // Inside Cloud Run (it sets K_SERVICE) or a container (the Dockerfile sets HOST=0.0.0.0) it listens on every address.
 const host = process.env.HOST || (process.env.K_SERVICE ? '0.0.0.0' : '127.0.0.1');
-app.listen(port, host, () => console.log(`apptrigger API listening on ${host}:${port}`));
+app.listen(port, host, () => {
+  const fuelixHost = (() => {
+    try {
+      return new URL(process.env.FUELIX_ENDPOINT).host;
+    } catch {
+      return null;
+    }
+  })();
+  log('start', `apptrigger API listening on ${host}:${port} (Node ${process.versions.node})`);
+  log('start', `environments: ${environments.map((e) => `${e.label}=${e.project}`).join(', ')}`);
+  log('start', process.env.FUELIX_API_KEY && fuelixHost && process.env.FUELIX_MODEL
+    ? `FuelIX: model ${process.env.FUELIX_MODEL} at ${fuelixHost}`
+    : 'FuelIX is NOT fully set up (FUELIX_API_KEY, FUELIX_ENDPOINT and FUELIX_MODEL are needed), so requests are read with the plain pattern');
+  const source = configSource();
+  log('start', `search keys come from ${source ? (source.type === 'local' ? `the local file ${source.file ?? ''}`.trim() : `${source.repo}@${source.branch}`) : 'nowhere yet'}`);
+});
+
+// A failure nobody caught would otherwise vanish; say so in the log.
+process.on('unhandledRejection', (reason) => fail('process', `unhandled error: ${reason?.stack ?? reason}`));

@@ -83,7 +83,7 @@ function buildReply({ logs, stats, understood, deep, limit, sourceLabel }) {
   const search = fmtMs(stats?.searchMs);
   const ai = fmtMs(stats?.analyzeMs);
   if (search) paragraphs.push([t(`The log search took ${search}${ai ? ` and FuelIX needed another ${ai}` : ''}.`)]);
-  paragraphs.push([t('For more details please refer the below')]);
+  paragraphs.push([t('For more details, please refer to the table below:')]);
   return paragraphs;
 }
 

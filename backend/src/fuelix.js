@@ -1,6 +1,7 @@
 // FuelIX layer: sends log messages to an OpenAI-compatible chat completions
 // endpoint and asks the model to pull structured values out of them.
 import { parseTimeRange, withoutSearch } from './timeRange.js';
+import { log, timer, warn } from './log.js';
 
 const BATCH_SIZE = 25;
 
@@ -30,18 +31,32 @@ function config() {
   return { key, endpoint, model };
 }
 
-async function chat(messages) {
+// A FuelIX call that takes longer than this fails with a clear message instead of waiting for ever.
+// Override with FUELIX_TIMEOUT_MS.
+const FUELIX_TIMEOUT_MS = Number(process.env.FUELIX_TIMEOUT_MS) || 60_000;
+
+async function chat(messages, purpose = 'call') {
   const { key, endpoint, model } = config();
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model, messages, temperature: 0 }),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`FuelIX request failed (${res.status}): ${text.slice(0, 300)}`);
-  const content = JSON.parse(text).choices?.[0]?.message?.content;
-  if (!content) throw new Error('FuelIX returned no content');
-  return content;
+  const t = timer();
+  log('fuelix', `${purpose}: asking ${model} (${messages.reduce((n, m) => n + m.content.length, 0)} characters)`);
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages, temperature: 0 }),
+      signal: AbortSignal.timeout(FUELIX_TIMEOUT_MS),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`FuelIX request failed (${res.status}): ${text.slice(0, 300)}`);
+    const content = JSON.parse(text).choices?.[0]?.message?.content;
+    if (!content) throw new Error('FuelIX returned no content');
+    log('fuelix', `${purpose}: answered in ${t.text()} (${content.length} characters)`);
+    return content;
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? `no answer after ${FUELIX_TIMEOUT_MS / 1000} s (FUELIX_TIMEOUT_MS)` : err.cause?.code ? `${err.message} (${err.cause.code})` : err.message;
+    fail('fuelix', `${purpose}: failed after ${t.text()}: ${reason}`);
+    throw new Error(err.name === 'TimeoutError' ? `FuelIX did not answer within ${FUELIX_TIMEOUT_MS / 1000} seconds` : err.message);
+  }
 }
 
 // The first complete JSON array or object in the text, or undefined. Everything after it is ignored, so a model that
@@ -114,13 +129,16 @@ Reply with ONLY a JSON object: {"name": "<candidate value or null>", "confidence
 export async function askWhichApplication(template, candidates, examined) {
   try {
     const list = candidates.slice(0, 10).map((c) => `- ${c.field}: ${c.value} (in ${c.count} of ${examined} logs)`).join('\n');
-    const content = await chat([
-      { role: 'system', content: pickApplicationPrompt },
-      { role: 'user', content: `Template: ${template}\nCandidates:\n${list}` },
-    ]);
+    const content = await chat(
+      [
+        { role: 'system', content: pickApplicationPrompt },
+        { role: 'user', content: `Template: ${template}\nCandidates:\n${list}` },
+      ],
+      'pick the likely application',
+    );
     return parseJsonArray(content)[0] ?? null;
   } catch (err) {
-    console.warn(`FuelIX could not pick the application, using the plain ranking: ${err.message}`);
+    warn('fuelix', `could not pick the application, using the plain ranking instead: ${err.message}`);
     return null;
   }
 }
@@ -173,18 +191,29 @@ export function validateInterpretation(prompt, raw) {
 export async function interpretPrompt(rawPrompt) {
   const prompt = redactSecrets(rawPrompt).trim().slice(0, 1000);
   const result = (search, env, by) => ({ search, env, by, range: search ? parseTimeRange(withoutSearch(prompt, search)) : null });
+  log('interpret', `reading a request of ${prompt.length} characters`);
   try {
-    const content = await chat([
-      { role: 'system', content: interpretPrompt_ },
-      { role: 'user', content: prompt },
-    ]);
+    const content = await chat(
+      [
+        { role: 'system', content: interpretPrompt_ },
+        { role: 'user', content: prompt },
+      ],
+      'read the request',
+    );
     const [raw] = parseJsonArray(content);
     const found = validateInterpretation(prompt, raw);
-    if (found.search) return result(found.search, found.env, 'fuelix');
+    if (found.search) {
+      const out = result(found.search, found.env, 'fuelix');
+      log('interpret', `FuelIX understood: search "${out.search}", time ${out.range ? JSON.stringify(out.range) : 'not named'}, environment ${out.env ?? 'not named'}`);
+      return out;
+    }
+    warn('interpret', 'FuelIX answered, but its search text was not found in the request, so the plain pattern is used');
   } catch (err) {
-    console.warn(`FuelIX could not read the request, using a plain pattern: ${err.message}`);
+    warn('interpret', `FuelIX could not read the request, using the plain pattern instead: ${err.message}`);
   }
-  return result(guessSearch(prompt), null, 'pattern');
+  const out = result(guessSearch(prompt), null, 'pattern');
+  log('interpret', `plain pattern: search ${out.search ? `"${out.search}"` : 'not found'}, time ${out.range ? JSON.stringify(out.range) : 'not named'}`);
+  return out;
 }
 
 /**
@@ -235,14 +264,20 @@ export async function extractIds(rawMessages, keys) {
   // Only request logs ("message": "request [{...") are analysed; other lines matching the search are not sent to the model.
   const eligible = messages.map((m, i) => i).filter((i) => isRequestLog(messages[i]));
 
+  const batches = Math.ceil(eligible.length / BATCH_SIZE);
+  log('analyze', `${messages.length} log${messages.length === 1 ? '' : 's'}: ${eligible.length} request log${eligible.length === 1 ? '' : 's'} go to FuelIX in ${batches} batch${batches === 1 ? '' : 'es'}, ${messages.length - eligible.length} skipped (not request logs); looking for ${keys.length} key${keys.length === 1 ? '' : 's'}`);
+
   for (let start = 0; start < eligible.length; start += BATCH_SIZE) {
     const indexes = eligible.slice(start, start + BATCH_SIZE);
     const batch = indexes.map((i) => messages[i]);
     const prompt = batch.map((m, i) => `--- log ${i} ---\n${m}`).join('\n');
-    const content = await chat([
-      { role: 'system', content: systemPrompt(keys) },
-      { role: 'user', content: prompt },
-    ]);
+    const content = await chat(
+      [
+        { role: 'system', content: systemPrompt(keys) },
+        { role: 'user', content: prompt },
+      ],
+      `find the caller, batch ${start / BATCH_SIZE + 1}/${batches}`,
+    );
     for (const item of parseJsonArray(content)) {
       if (!Number.isInteger(item?.index) || item.index < 0 || item.index >= batch.length) continue;
       // Accept the older single-match shape {index, key, value} as well.
@@ -251,6 +286,8 @@ export async function extractIds(rawMessages, keys) {
     }
   }
   // Safety net: if the model reported nothing but the key is plainly in the log, use the pattern match.
+  const byModel = eligible.filter((i) => results[i].length).length;
   for (const i of eligible) if (!results[i].length) results[i] = findKeysByPattern(messages[i], keys);
+  log('analyze', `done: a caller key found in ${byModel} of ${eligible.length} request logs by FuelIX, ${eligible.filter((i) => results[i].length).length} in total with the plain pattern as backup`);
   return results;
 }
