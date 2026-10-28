@@ -33,9 +33,14 @@ permissions:
 # Reading logs for the NP / PR switch (optional; each side has its own service account)
 #   LOGS_PROJECT_ID_NP       Project behind the NP button, e.g. "cio-notification-np-93822f".
 #                            (A project id is not secret: it may be a Secret or a repository Variable.)
-#   LOGS_SA_KEY_NP           JSON key of the service account that reads the NP logs (paste the whole key file).
-#                            MUST be a Secret. A Variable is stored as plain text, is visible to everyone who can open
-#                            the repository settings, and is not hidden in workflow logs; the workflow ignores it.
+#   LOGS_SA_KEY_NP           NOT a GitHub secret. The JSON key of the service account that reads the NP logs lives in
+#                            Google Secret Manager (secret "LOGS_SA_KEY_NP", latest version, in the same project as
+#                            GCP_PROJECT_ID) and is given to the backend as GCP_SA_KEY_NP when it starts. To use another
+#                            secret name, set the repository Variable LOGS_SA_KEY_NP_SECRET_NAME. The service account
+#                            the backend runs as needs "Secret Manager Secret Accessor" on that secret. (The deploy
+#                            account only needs to read it for an optional format check, which is skipped otherwise.)
+#   LOGS_SA_KEY_PR is below and still a GitHub secret. A key must never be a Variable: a Variable is plain text, is
+#                            visible to everyone who can open the repository settings and is not hidden in workflow logs.
 #   LOGS_PROJECT_ID_PR       Project behind the PR button, e.g. "cio-notification-pr-64911f" (Secret or Variable).
 #   LOGS_SA_KEY_PR           JSON key of the service account that reads the PR logs (a Secret, as above).
 #                            Each account needs "Logs Viewer" (roles/logging.viewer) on its own project, and on the
@@ -161,13 +166,28 @@ jobs:
         env:
           LOGS_PROJECT_ID_NP: ${{ vars.LOGS_PROJECT_ID_NP || secrets.LOGS_PROJECT_ID_NP }}
           LOGS_PROJECT_ID_PR: ${{ vars.LOGS_PROJECT_ID_PR || secrets.LOGS_PROJECT_ID_PR }}
-          LOGS_SA_KEY_NP: ${{ secrets.LOGS_SA_KEY_NP }}
+          # The NP key lives in Secret Manager (see the deploy step); the PR key is still a GitHub secret.
+          NP_KEY_SECRET: ${{ vars.LOGS_SA_KEY_NP_SECRET_NAME || 'LOGS_SA_KEY_NP' }}
           LOGS_SA_KEY_PR: ${{ secrets.LOGS_SA_KEY_PR }}
         run: |
           project_re='^[a-z][a-z0-9-]{4,28}[a-z0-9]$'
           for side in NP PR; do
-            proj_var="LOGS_PROJECT_ID_$side"; key_var="LOGS_SA_KEY_$side"
-            proj="${!proj_var}"; key="${!key_var}"
+            proj_var="LOGS_PROJECT_ID_$side"
+            proj="${!proj_var}"
+            if [ "$side" = "NP" ]; then
+              # Read the NP key from Secret Manager for the check only (it is not printed). The deploy account may not be
+              # allowed to read it; that only skips the check, the backend reads the secret with its own account.
+              key_var="the Secret Manager secret $NP_KEY_SECRET"
+              key=""
+              if [ -n "$proj" ]; then key=$(gcloud secrets versions access latest --secret="$NP_KEY_SECRET" --project="$GCP_PROJECT_ID" 2>/dev/null || true); fi
+              [ -n "$proj" ] && [ -z "$key" ] && echo "::warning::NP: could not read $key_var in project $GCP_PROJECT_ID, so its content was not checked. Make sure it exists and holds the whole JSON key file."
+              if [ -n "$proj" ] && [ -z "$key" ]; then
+                [[ "$proj" =~ $project_re ]] || { echo "::error::$proj_var is not a project id (like my-project-123; check for spaces or a line break)"; exit 1; }
+                echo "NP: project $proj, key not checked"; continue
+              fi
+            else
+              key_var="LOGS_SA_KEY_$side"; key="${!key_var}"
+            fi
             if [ -z "$proj" ] && [ -z "$key" ]; then echo "$side: not set, skipped"; continue; fi
             if [ -z "$proj" ]; then echo "::error::$key_var is set but $proj_var is not"; exit 1; fi
             if [ -z "$key" ]; then echo "::error::$proj_var is set but the SECRET $key_var is not. Create it under Settings > Secrets (not Variables: a Variable is plain text and is not used for keys)."; exit 1; fi
@@ -187,7 +207,6 @@ jobs:
           APP_LOGS_PROJECT_ID: ${{ secrets.LOGS_PROJECT_ID || secrets.GCP_PROJECT_ID }}
           APP_LOGS_PROJECT_NP: ${{ vars.LOGS_PROJECT_ID_NP || secrets.LOGS_PROJECT_ID_NP }}
           APP_LOGS_PROJECT_PR: ${{ vars.LOGS_PROJECT_ID_PR || secrets.LOGS_PROJECT_ID_PR }}
-          APP_LOGS_SA_KEY_NP: ${{ secrets.LOGS_SA_KEY_NP }}
           APP_LOGS_SA_KEY_PR: ${{ secrets.LOGS_SA_KEY_PR }}
           APP_FUELIX_ENDPOINT: ${{ secrets.FUELIX_ENDPOINT }}
           APP_FUELIX_MODEL: ${{ secrets.FUELIX_MODEL }}
@@ -202,10 +221,18 @@ jobs:
         env:
           PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS || vars._PUBLIC_ACCESS }}
           FUELIX_SECRET_NAME: ${{ vars.FUELIX_SECRET_NAME || 'fuelix-api-key' }}
+          LOGS_PROJECT_ID_NP: ${{ vars.LOGS_PROJECT_ID_NP || secrets.LOGS_PROJECT_ID_NP }}
+          NP_KEY_SECRET: ${{ vars.LOGS_SA_KEY_NP_SECRET_NAME || 'LOGS_SA_KEY_NP' }}
         run: |
           IMAGE=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${BACKEND_SERVICE}
-          # The FuelIX key comes from Secret Manager, never from a GitHub secret. A secret name is letters, digits, - and _.
-          [[ "$FUELIX_SECRET_NAME" =~ ^[A-Za-z0-9_-]{1,255}$ ]] || { echo "::error::FUELIX_SECRET_NAME is not a valid Secret Manager name"; exit 1; }
+          # The FuelIX key and the NP log-reader key come from Secret Manager, never from a GitHub secret. They are given
+          # to the backend as FUELIX_API_KEY and GCP_SA_KEY_NP. A secret name is letters, digits, - and _.
+          name_re='^[A-Za-z0-9_-]{1,255}$'
+          [[ "$FUELIX_SECRET_NAME" =~ $name_re ]] || { echo "::error::FUELIX_SECRET_NAME is not a valid Secret Manager name"; exit 1; }
+          [[ "$NP_KEY_SECRET" =~ $name_re ]] || { echo "::error::LOGS_SA_KEY_NP_SECRET_NAME is not a valid Secret Manager name"; exit 1; }
+          SECRETS="FUELIX_API_KEY=${FUELIX_SECRET_NAME}:latest"
+          # Only when the NP side is set up; otherwise there is no NP key to give the backend.
+          if [ -n "$LOGS_PROJECT_ID_NP" ]; then SECRETS="${SECRETS},GCP_SA_KEY_NP=${NP_KEY_SECRET}:latest"; fi
           # There is no sign-in, so the service is private unless the PUBLIC_ACCESS variable is exactly "true".
           if [ "$PUBLIC_ACCESS" = "true" ]; then
             ACCESS=--allow-unauthenticated
@@ -227,7 +254,7 @@ jobs:
             --max-instances 5 \
             --timeout 300 \
             --env-vars-file "$RUNNER_TEMP/backend-env.yaml" \
-            --set-secrets "FUELIX_API_KEY=${FUELIX_SECRET_NAME}:latest"
+            --set-secrets "${SECRETS}"
 
       - name: Remove the settings file
         if: always()
