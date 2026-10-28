@@ -44,7 +44,11 @@ permissions:
 #                            neither to keep the single LOGS_PROJECT_ID / GCP_PROJECT_ID behaviour.
 #
 # FuelIX
-#   FUELIX_API_KEY, FUELIX_ENDPOINT, FUELIX_MODEL
+#   FUELIX_ENDPOINT, FUELIX_MODEL   GitHub secrets.
+#   The API key is NOT a GitHub secret: it is read from Google Secret Manager (secret "fuelix-api-key", latest version,
+#   in the same project as GCP_PROJECT_ID) and given to the backend as FUELIX_API_KEY when it starts. To use another
+#   secret name, set the repository Variable FUELIX_SECRET_NAME. The service account the backend runs as needs the
+#   "Secret Manager Secret Accessor" role (roles/secretmanager.secretAccessor) on that secret.
 #
 # Search keys (optional). Without these the backend uses the config.example.json that is built into the image.
 #   CONFIG_GITHUB_REPO       owner/repository holding the config file.
@@ -97,12 +101,11 @@ jobs:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           GCP_REGION: ${{ secrets.GCP_REGION }}
           AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
-          FUELIX_API_KEY: ${{ secrets.FUELIX_API_KEY }}
           FUELIX_ENDPOINT: ${{ secrets.FUELIX_ENDPOINT }}
           FUELIX_MODEL: ${{ secrets.FUELIX_MODEL }}
         run: |
           missing=""
-          for name in GCP_SA_KEY GCP_PROJECT_ID GCP_REGION AR_REPOSITORY FUELIX_API_KEY FUELIX_ENDPOINT FUELIX_MODEL; do
+          for name in GCP_SA_KEY GCP_PROJECT_ID GCP_REGION AR_REPOSITORY FUELIX_ENDPOINT FUELIX_MODEL; do
             [ -z "${!name}" ] && missing="$missing $name"
           done
           if [ -n "$missing" ]; then
@@ -186,7 +189,6 @@ jobs:
           APP_LOGS_PROJECT_PR: ${{ vars.LOGS_PROJECT_ID_PR || secrets.LOGS_PROJECT_ID_PR }}
           APP_LOGS_SA_KEY_NP: ${{ secrets.LOGS_SA_KEY_NP }}
           APP_LOGS_SA_KEY_PR: ${{ secrets.LOGS_SA_KEY_PR }}
-          APP_FUELIX_API_KEY: ${{ secrets.FUELIX_API_KEY }}
           APP_FUELIX_ENDPOINT: ${{ secrets.FUELIX_ENDPOINT }}
           APP_FUELIX_MODEL: ${{ secrets.FUELIX_MODEL }}
           APP_CONFIG_REPO: ${{ secrets.CONFIG_GITHUB_REPO }}
@@ -199,8 +201,11 @@ jobs:
       - name: Deploy the backend to Cloud Run
         env:
           PUBLIC_ACCESS: ${{ vars.PUBLIC_ACCESS || vars._PUBLIC_ACCESS }}
+          FUELIX_SECRET_NAME: ${{ vars.FUELIX_SECRET_NAME || 'fuelix-api-key' }}
         run: |
           IMAGE=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${BACKEND_SERVICE}
+          # The FuelIX key comes from Secret Manager, never from a GitHub secret. A secret name is letters, digits, - and _.
+          [[ "$FUELIX_SECRET_NAME" =~ ^[A-Za-z0-9_-]{1,255}$ ]] || { echo "::error::FUELIX_SECRET_NAME is not a valid Secret Manager name"; exit 1; }
           # There is no sign-in, so the service is private unless the PUBLIC_ACCESS variable is exactly "true".
           if [ "$PUBLIC_ACCESS" = "true" ]; then
             ACCESS=--allow-unauthenticated
@@ -221,7 +226,8 @@ jobs:
             --min-instances 0 \
             --max-instances 5 \
             --timeout 300 \
-            --env-vars-file "$RUNNER_TEMP/backend-env.yaml"
+            --env-vars-file "$RUNNER_TEMP/backend-env.yaml" \
+            --set-secrets "FUELIX_API_KEY=${FUELIX_SECRET_NAME}:latest"
 
       - name: Remove the settings file
         if: always()

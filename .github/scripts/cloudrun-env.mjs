@@ -27,8 +27,8 @@ const SETTINGS = [
   ['GCP_SA_KEY_NP', 'APP_LOGS_SA_KEY_NP'],
   ['GCP_SA_KEY_PR', 'APP_LOGS_SA_KEY_PR'],
 
-  // FuelIX
-  ['FUELIX_API_KEY', 'APP_FUELIX_API_KEY'],
+  // FuelIX. The API key is not here: the workflow mounts it from Secret Manager (--set-secrets FUELIX_API_KEY=...),
+  // so it never passes through this file or a GitHub secret.
   ['FUELIX_ENDPOINT', 'APP_FUELIX_ENDPOINT'],
   ['FUELIX_MODEL', 'APP_FUELIX_MODEL'],
 
