@@ -116,7 +116,7 @@ button { font: inherit; font-size: 15px; cursor: pointer; }
 .error { color: var(--error); font-weight: 600; text-align: center; }
 .count { font-size: 14px; color: var(--muted); }
 article { background: #fff; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px; }
-.log-card { display: grid; grid-template-columns: 70fr 30fr; overflow: hidden; }
+.log-card { display: grid; grid-template-columns: 60fr 40fr; overflow: hidden; }
 .log-main { padding: 14px 16px; min-width: 0; }
 .log-app { padding: 20px; background: var(--purple-tint); border-left: 1px solid var(--line); display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; }
 .log-app p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text); }
