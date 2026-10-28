@@ -20,7 +20,7 @@ function fmtLength(ms) {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // "Today" -> "today", "Last 5 days" -> "last 5 days"; a date range is left as it is (month names keep their capital).
-const lowerLead = (s) => s.replace(/^(Today|Yesterday|Last)\b/, (m) => m.toLowerCase());
+const lowerLead = (s) => s.replace(/^(Today|Yesterday|Last|Default)\b/, (m) => m.toLowerCase());
 
 const b = (text) => ({ text, bold: true }); // a highlighted name or number
 const t = (text) => ({ text });

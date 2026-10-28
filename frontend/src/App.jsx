@@ -16,6 +16,9 @@ const EXAMPLES = [
   'Triggering application of NOTIFY_DATA_ROLLOVER_KOODO from Jan-2026 to Oct 2026',
 ];
 
+// The time range used when a request names none: this many days back from now.
+const DEFAULT_DAYS = 30;
+
 // How many logs, from the top, are typed out as they appear. The rest show at once so a long list is not slow.
 const TYPED_LOGS = 3;
 
@@ -238,11 +241,12 @@ export default function App() {
         setTo(toLocalInput(range[1]));
       }
     } else {
-      // The request named no time, so it is Today (not whatever an earlier request asked for).
-      const today = resolveRange({ kind: 'today' });
-      range = today.range;
-      timeLabel = today.label;
-      setPreset('today');
+      // The request named no time, so the default applies: the last 30 days up to now (not whatever an earlier request
+      // asked for). It is shown as "Default".
+      const fallback = resolveRange({ kind: 'days', days: DEFAULT_DAYS });
+      range = fallback.range;
+      timeLabel = 'Default';
+      setPreset(fallback.preset ?? 'custom');
     }
     const chosen = envs.find((x) => x.id === envId);
     setUnderstood({ search: plan.search, time: timeLabel, env: chosen?.label ?? null, project: chosen?.project ?? null, by: plan.by });
