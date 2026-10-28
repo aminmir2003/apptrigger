@@ -1,7 +1,7 @@
 // FuelIX layer: sends log messages to an OpenAI-compatible chat completions
 // endpoint and asks the model to pull structured values out of them.
 import { parseTimeRange, withoutSearch } from './timeRange.js';
-import { log, timer, warn } from './log.js';
+import { fail, log, timer, warn } from './log.js';
 
 const BATCH_SIZE = 25;
 

@@ -5,7 +5,7 @@ import { queryLogs, environments } from './logging.js';
 import { extractIds, interpretPrompt } from './fuelix.js';
 import { deepAnalyze } from './deepAnalysis.js';
 import { getConfig, configSource, chooseKeys } from './githubConfig.js';
-import { fail, log, timer, warn } from './log.js';
+import { fail, log, scrub, timer, warn } from './log.js';
 
 const app = express();
 app.use(express.json({ limit: '25mb' }));
@@ -45,7 +45,7 @@ app.get('/logs', async (req, res) => {
     res.json(await queryLogs({ env, search, insertId, resource, service, revision, severity, filter, from, to, hours: Number(hours) || 1, limit }));
   } catch (err) {
     fail('http', err.stack ?? String(err));
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: scrub(err.message) });
   }
 });
 
@@ -61,7 +61,7 @@ app.post('/interpret', async (req, res) => {
     res.json(await interpretPrompt(prompt));
   } catch (err) {
     fail('http', err.stack ?? String(err));
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: scrub(err.message) });
   }
 });
 
@@ -76,7 +76,7 @@ app.post('/deep-analyze', async (req, res) => {
     res.json(await deepAnalyze({ env, template: template.trim(), from }));
   } catch (err) {
     fail('http', err.stack ?? String(err));
-    res.status(err.message === 'Invalid template name' ? 400 : 500).json({ error: err.message });
+    res.status(err.message === 'Invalid template name' ? 400 : 500).json({ error: scrub(err.message) });
   }
 });
 
@@ -95,7 +95,7 @@ app.get('/config', async (_req, res) => {
     res.json({ searchKeys, labels, source: configSource() });
   } catch (err) {
     fail('http', err.stack ?? String(err));
-    res.status(502).json({ error: err.message, source: configSource() });
+    res.status(502).json({ error: scrub(err.message), source: configSource() });
   }
 });
 
@@ -114,14 +114,14 @@ app.post('/analyze', async (req, res) => {
     try {
       searchKeys = chooseKeys(keys, config.searchKeys);
     } catch (err) {
-      return res.status(400).json({ error: err.message });
+      return res.status(400).json({ error: scrub(err.message) });
     }
     // Every key found in a log comes back in priority order; the first one is the log's identifier.
     const found = await extractIds(messages, searchKeys);
     res.json({ ids: found.map((list) => list[0] ?? null) });
   } catch (err) {
     fail('http', err.stack ?? String(err));
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: scrub(err.message) });
   }
 });
 
@@ -134,14 +134,14 @@ if (process.env.PORTAL_ENABLED === 'true') {
       res.json(await portalLogin());
     } catch (err) {
       fail('http', err.stack ?? String(err));
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: scrub(err.message) });
     }
   });
   app.get('/portal/status', async (_req, res) => {
     try {
       res.json(await portalStatus());
     } catch (err) {
-      res.json({ signedIn: false, error: err.message });
+      res.json({ signedIn: false, error: scrub(err.message) });
     }
   });
   app.post('/portal/logout', async (_req, res) => {

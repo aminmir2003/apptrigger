@@ -76,6 +76,35 @@ try {
     ['dedupe: the oldest repeat gives the first-seen time', (() => { const u = uniqueRecords(); const m = reqLog('ECP', 'T1'); const a = { message: m, timestamp: '2026-10-26T01:00:00Z' }; u.add(a); u.add({ message: m, timestamp: '2026-10-25T23:00:00Z' }); u.add({ message: m, timestamp: '2026-10-25T20:00:00Z' }); return a.repeats === 3 && a.firstSeen === '2026-10-25T20:00:00Z' && a.timestamp === '2026-10-26T01:00:00Z'; })()],
     ['dedupe: the newest (first seen) record is the one kept', (() => { const u = uniqueRecords(); const a = { message: reqLog('ECP', 'T1'), id: 'new' }; const b = { message: reqLog('ECP', 'T1'), id: 'old' }; return u.add(a) && !u.add(b) && a.repeats === 2; })()],
   );
+  // Nothing that looks like a key may reach a log line or an error sent to the page.
+  const { scrub } = await import('../src/log.js');
+  process.env.FUELIX_API_KEY = 'ak-SMOKE1234567890abcdefXYZ';
+  process.env.GCP_SA_KEY_PR = JSON.stringify({ type: 'service_account', client_email: 'pr@x.iam.gserviceaccount.com', private_key: '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkq\n-----END PRIVATE KEY-----\n', private_key_id: 'abcdef0123456789abcdef' });
+  const hides = (text, secret) => !scrub(text).includes(secret);
+  cases.push(
+    ['secrets: the FuelIX key from the settings is hidden', hides('FuelIX request failed (401): bad key ak-SMOKE1234567890abcdefXYZ', 'SMOKE1234567890')],
+    ['secrets: a partly repeated key is hidden', hides('Incorrect API key provided: ak-SMOKE12345***', 'SMOKE12345')],
+    ['secrets: the private key inside a service account key is hidden', hides('failed with MIIEvQIBADANBgkq in the key', 'MIIEvQIBADANBgkq')],
+    ['secrets: a private key block is hidden', hides('key=-----BEGIN PRIVATE KEY-----\nQUJDREVGRw==\n-----END PRIVATE KEY-----', 'QUJDREVGRw')],
+    ['secrets: a private_key field is hidden', hides('{"private_key":"abcdefghijklmnop"}', 'abcdefghijklmnop')],
+    ['secrets: a bearer token is hidden', hides('Authorization: Bearer abc123def456ghi789', 'abc123def456ghi789')],
+    ['secrets: a Basic authorization header is hidden', hides('authorization=Basic ODNkYWVlNWMtMzI1Yi00YzQx', 'ODNkYWVlNWMtMzI1Yi00YzQx')],
+    ['secrets: a JWT is hidden', hides('token eyJhbGciOiJSUzI1NiIs.eyJzY29wZSI6WyIxOC1SUCJd.MBnIZ6JIK5yOeoYK', 'eyJzY29wZSI6')],
+    ['secrets: a GitHub token is hidden', hides('using ghp_abcdefghijklmnopqrstuvwxyz0123456789', 'abcdefghijklmnopqrstuvwxyz0123456789')],
+    ['secrets: a Google access token is hidden', hides('got ya29.a0AfH6SMBabcdefghijklmnopqrstuvwxyz', 'a0AfH6SMBabcdefghijklmnopqrstuvwxyz')],
+    ['secrets: client_secret=... and api_key=... are hidden', hides('client_secret=hunter2hunter2&api_key: abcdefgh123', 'hunter2hunter2') && hides('api_key: abcdefgh123', 'abcdefgh123')],
+    ['secrets: normal log text is left alone', scrub('page 3/10: 500 entries in 4.2 s, kept TELUS_WELCOME for np') === 'page 3/10: 500 entries in 4.2 s, kept TELUS_WELCOME for np'],
+    ['secrets: a service account email is not a secret and stays', scrub('signs in with pr@x.iam.gserviceaccount.com').includes('pr@x.iam.gserviceaccount.com')],
+  );
+  delete process.env.FUELIX_API_KEY;
+  delete process.env.GCP_SA_KEY_PR;
+  // Log entries shown on the page: credentials are hidden, the data is not.
+  const { maskCredentials } = await import('../src/log.js');
+  const shown = maskCredentials('request [{X-Consumer-Username=ECP, Authorization=Bearer eyJhbGciOiJSUzI1NiJ9.eyJzY29wZSI6WyIxOC1SUCJd.MBnIZ6JIK5yOeoYK, authz-capture=Basic ODNkYWVlNWMtMzI1Yi00YzQx, X-Consumer-ID=25ebd5dd},{"templateName":"T1","password":"visible-data"}]');
+  cases.push(
+    ['entries: the bearer token and JWT in a request log are hidden', !shown.includes('eyJhbGci') && !shown.includes('MBnIZ6JIK5yOeoYK')],
+    ['entries: the data around it is left as it was', shown.includes('X-Consumer-Username=ECP') && shown.includes('X-Consumer-ID=25ebd5dd') && shown.includes('"templateName":"T1"') && shown.includes('visible-data')],
+  );
   const { parseJsonArray } = await import('../src/fuelix.js');
   const answer = '[{"index": 0, "matches": [{"key": "X-Consumer-Username", "value": "PaymentManagement"}]}]';
   const parses = (text) => { try { return parseJsonArray(text); } catch { return null; } };

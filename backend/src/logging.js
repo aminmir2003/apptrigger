@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { Logging } from '@google-cloud/logging';
 import { getConfig } from './githubConfig.js';
 import { uniqueRecords } from './dedupe.js';
-import { fail, log, timer, warn } from './log.js';
+import { fail, log, maskCredentials, timer, warn } from './log.js';
 
 // The environments a request may read, each with its own project (GCP_PROJECT_NP / GCP_PROJECT_PR). This API has no
 // sign-in, so it never reads a project that is not listed here. With neither set, GCP_PROJECT_ID is the only one.
@@ -79,7 +79,8 @@ const MAX_MESSAGE_CHARS = Number(process.env.MAX_MESSAGE_CHARS) || 100_000;
 
 // Return the complete log message (structured payloads are turned into a JSON string).
 const fullMessage = (data) => {
-  const text = typeof data === 'string' ? data : JSON.stringify(data) ?? '';
+  // Credentials inside a log entry (such as the Authorization header of a request) never reach the page.
+  const text = maskCredentials(typeof data === 'string' ? data : JSON.stringify(data) ?? '');
   return text.length > MAX_MESSAGE_CHARS ? `${text.slice(0, MAX_MESSAGE_CHARS)}… [truncated]` : text;
 };
 

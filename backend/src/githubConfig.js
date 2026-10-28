@@ -20,6 +20,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { warn } from './log.js';
 
 const KEY_PATTERN = /^[A-Za-z0-9_.-]{1,40}$/;
 const MAX_KEYS = 20;
@@ -149,7 +150,7 @@ export async function getConfig() {
     })
     .catch((err) => {
       if (!cache) throw err;
-      console.warn(`GitHub config refresh failed, using the last good copy: ${err.message}`);
+      warn('config', `GitHub config refresh failed, using the last good copy: ${err.message}`);
       cache = { ...cache, fetchedAt: Date.now(), stale: true };
       return cache.config;
     })
