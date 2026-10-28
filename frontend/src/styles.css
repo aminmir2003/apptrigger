@@ -76,7 +76,7 @@ button { font: inherit; font-size: 15px; cursor: pointer; }
 .chat-status strong { color: var(--purple); }
 /* The summary above the results, told like a chat reply: short paragraphs with the key names highlighted. */
 .summary { margin: 0 0 14px; padding: 14px 18px; background: var(--purple-tint); border: 1px solid var(--line); border-radius: 18px; }
-.summary-title { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 18px; font-weight: 700; color: var(--green); }
+.summary-title { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 18px; font-weight: 700; color: var(--green-bright); }
 .summary p { margin: 0 0 8px; font-size: 15px; line-height: 1.55; color: var(--text); }
 .summary p:last-child { margin-bottom: 0; }
 .summary strong { color: var(--purple); }
