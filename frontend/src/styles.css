@@ -2,9 +2,10 @@
   --purple: #4b286d;
   --purple-dark: #2b0d3e;
   --purple-tint: #f4f0f7;
-  --green: #2b8000;
-  --green-dark: #1f6000;
-  --green-bright: #66cc00;
+  /* The one TELUS green, taken from the logo file (TELUS_Logo.svg). Every green in the page uses it. */
+  --green: #66cc00;
+  --green-bright: var(--green);
+  --green-dark: #52a300; /* the same green, a little darker, only for a button while the mouse is over it */
   --text: #2a2c2e;
   --muted: #5a5d61;
   --line: #d8d3de;
@@ -32,7 +33,7 @@ main { max-width: none; margin: 0; padding: 8px 100px 48px; }
 .hero .brand-name { display: flex; align-items: center; gap: 10px; margin: 0 0 2px; font-family: 'Poppins', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 34px; line-height: 1.15; font-weight: 500; color: var(--purple); }
 .brand-name b { font-weight: 700; }
 .brand-trace { color: var(--green); }
-.brand-name em { padding: 2px 14px; border-radius: 999px; background: var(--green-bright); color: #1c4600; font-size: 18px; font-style: normal; font-weight: 500; }
+.brand-name em { padding: 2px 14px; border-radius: 999px; background: var(--green); color: var(--purple-dark); font-size: 18px; font-style: normal; font-weight: 500; }
 .hero .brand-sub { margin: 0; font-family: 'Nunito', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14.8px; color: var(--muted); }
 .hero h1 { margin: 0 0 6px; font-size: 38px; line-height: 1.1; font-weight: 700; color: var(--purple); }
 .hero p { margin: 0; font-size: 16px; color: var(--muted); white-space: nowrap; }
@@ -62,10 +63,10 @@ button { font: inherit; font-size: 15px; cursor: pointer; }
 .composer-input { display: block; flex: 1; min-width: 0; min-height: 44px; max-height: 200px; padding: 10px 0; border: none; outline: none; resize: none; background: none; color: var(--text); font: inherit; font-size: 16px; line-height: 1.5; }
 .composer-input::placeholder { color: #7a7584; }
 .composer-bar { display: flex; flex: none; }
-.send-btn { flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; background: var(--green); color: #fff; transition: background 0.15s, opacity 0.15s, transform 0.1s; }
-.send-btn:hover:not(:disabled) { background: var(--green-dark); }
+.send-btn { flex: none; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; background: var(--purple); color: #fff; transition: background 0.15s, opacity 0.15s, transform 0.1s; }
+.send-btn:hover:not(:disabled) { background: var(--purple-dark); }
 .send-btn:active:not(:disabled) { transform: scale(0.94); }
-.send-btn:disabled { background: var(--green); opacity: 0.3; cursor: not-allowed; }
+.send-btn:disabled { background: var(--purple); opacity: 0.3; cursor: not-allowed; }
 .send-btn:focus-visible { outline: 3px solid rgba(75, 40, 109, 0.4); outline-offset: 2px; }
 /* Example requests under an empty box: click one to fill it in. */
 .suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
@@ -76,7 +77,7 @@ button { font: inherit; font-size: 15px; cursor: pointer; }
 .chat-status strong { color: var(--purple); }
 /* The summary above the results, told like a chat reply: short paragraphs with the key names highlighted. */
 .summary { margin: 0 0 14px; padding: 14px 18px; background: var(--purple-tint); border: 1px solid var(--line); border-radius: 18px; }
-.summary-title { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 18px; font-weight: 700; color: var(--green-bright); }
+.summary-title { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 18px; font-weight: 700; color: var(--green); }
 .summary p { margin: 0 0 8px; font-size: 15px; line-height: 1.55; color: var(--text); }
 .summary p:last-child { margin-bottom: 0; }
 .summary strong { color: var(--purple); }
@@ -205,8 +206,8 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size
 .lv-id { padding: 10px 12px; background: var(--purple-tint); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
 .lv-id dt { font-size: 12px; font-weight: 700; color: var(--purple); }
 .lv-id dd { margin: 4px 0 0; font: 13px/1.4 Consolas, 'Courier New', monospace; color: var(--text); word-break: break-all; }
-.lv-id.hit { background: #eef7e6; border-color: var(--green); box-shadow: inset 4px 0 0 var(--green); }
-.lv-id.hit dt { color: var(--green-dark); }
+.lv-id.hit { background: rgba(102, 204, 0, 0.12); border-color: var(--green); box-shadow: inset 4px 0 0 var(--green); }
+.lv-id.hit dt { color: var(--purple); }
 .lv details { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .lv summary { cursor: pointer; padding: 9px 12px; font-weight: 700; color: var(--purple); background: #faf8fc; }
 .lv summary .count { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--purple-tint); font-size: 12px; }
@@ -228,7 +229,7 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size
 .toggle label { font-size: 15px; font-weight: 700; color: var(--purple); }
 .toggle input { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 48px; height: 28px; margin: 0; padding: 0; border: none; border-radius: 999px; background: #b9b0c4; cursor: pointer; transition: background 0.2s; }
 .toggle input::after { content: ""; position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform 0.2s; }
-.toggle input:checked { background: var(--green); }
+.toggle input:checked { background: var(--purple); }
 .toggle input:checked::after { transform: translateX(20px); }
 .toggle input:focus-visible { outline: 3px solid rgba(75, 40, 109, 0.4); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .toggle input, .toggle input::after { transition: none; } }
