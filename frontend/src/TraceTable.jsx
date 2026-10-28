@@ -5,6 +5,9 @@ import { Typed, useTypewriter } from './typewriter.jsx';
 // Request headers shown in the table beside every log.
 const TRACE_HEADERS = ['X-Consumer-Username', 'X-Consumer-ID', 'Kong-Request-ID', 'X-Kong-Request-Id', 'appId', 'originatorApplicationId'];
 
+// What Kong leaves on a request that came through it. If none of these is in the log, the request is internal.
+const KONG_FIELDS = ['X-Consumer-Username', 'X-Consumer-ID', 'Kong-Request-ID', 'X-Kong-Request-Id'];
+
 /**
  * The table beside a log: who called, from the headers and body of the log itself, plus an optional Comments row
  * (what the other logs of the template point to) when this log names no caller.
@@ -25,6 +28,8 @@ export default function TraceTable({ message, deepResult = null, animate = false
   const total = texts.reduce((n, t) => n + t.length, 0);
   const shown = useTypewriter(total, animate, { seconds: 1.4 });
   const done = shown >= total;
+  // None of the traces Kong (the API gateway) stamps on a request was found, so nothing came in through Kong.
+  const internal = KONG_FIELDS.every((name) => !rows.find((r) => r.name === name)?.value);
 
   return (
     <table className="trace-table">
@@ -46,6 +51,12 @@ export default function TraceTable({ message, deepResult = null, animate = false
             </tr>
           );
         })}
+        {done && internal && (
+          <tr>
+            <th scope="row">Remarks</th>
+            <td>This is an internal ECP request and was not initiated by Kong.</td>
+          </tr>
+        )}
         {done && deepResult && (
           <tr>
             <th scope="row">Comments</th>

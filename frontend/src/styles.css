@@ -252,8 +252,7 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; font-size
 .trace-table th, .trace-table td { padding: 6px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); word-break: break-word; }
 .trace-table tr:last-child th, .trace-table tr:last-child td { border-bottom: none; }
 .trace-table th { font-weight: 700; color: var(--purple); white-space: nowrap; }
-.trace-table td.muted { color: var(--muted); }
-.trace-table td strong { display: block; color: var(--purple); }
+.trace-table td.muted { color: var(--muted); }.trace-table td strong { display: block; color: var(--purple); }
 /* The consumer is the main answer, so its row stands out. */
 .trace-table .key-row td { font-size: 15px; font-weight: 700; color: var(--purple); }
 .trace-table .key-row td.muted { font-weight: 400; color: var(--muted); }
