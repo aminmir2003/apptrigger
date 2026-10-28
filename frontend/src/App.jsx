@@ -831,7 +831,7 @@ export default function App() {
               <time>{log.timestamp}</time>
               {log.repeats > 1 && (
                 <span className="repeats" title="Same template and X-Consumer-Username; only the newest is shown">
-                  seen {log.repeats}&times;
+                  Total No of Requests Triggered during this time as <strong>{log.repeats}&times;</strong>
                 </span>
               )}
             </header>
